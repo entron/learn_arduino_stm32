@@ -1,18 +1,19 @@
 #include <Arduino.h>
 
-// put function declarations here:
-int myFunction(int, int);
-
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+    // Start serial communication
+    Serial.begin(115200);
+    // Wait a bit for the serial monitor to connect (optional)
+    delay(2000);
+    Serial.println("Blue Pill is alive!");
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-}
+    // Print uptime in milliseconds
+    Serial.print("Uptime: ");
+    Serial.print(millis());
+    Serial.println(" ms");
 
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+    // Wait one second
+    delay(1000);
 }
