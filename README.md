@@ -1,132 +1,146 @@
-# Arduino STM32 Learning Project
+# STM32 Blue Pill + SimpleFOC Mini (Sensorless Open-Loop) Project
 
-This is a simple Arduino-style project for the STM32 Blue Pill (STM32F103C6) microcontroller using PlatformIO.
+Arduino/PlatformIO project driving a sensorless BLDC motor using a SimpleFOC Mini v1.0 (DRV8313 based) and an STM32 Blue Pill.
 
-## Hardware
+## Current Firmware Features
 
-- **Board**: STM32 Blue Pill (STM32F103C6)
-- **Upload Protocol**: ST-Link
-- **Framework**: Arduino
+1. Open‑loop (sensorless) velocity control using SimpleFOC `BLDCMotor` + `BLDCDriver3PWM`.
+2. 3‑phase PWM on TIM1 pins: PA8 / PA9 / PA10.
+3. Driver enable (EN / nSLEEP) on PB12 (kept low during init, then enabled).
+4. Debug serial on `Serial2` (USART2: PA2=TX, PA3=RX) at 115200 baud.
+5. Runtime velocity command over serial: `v <rad_per_s>` (e.g. `v 25`).
 
-## Project Description
+## Hardware Summary
 
-This project demonstrates basic serial communication with the STM32 Blue Pill. The firmware performs the following operations:
+| Component                | Notes |
+|--------------------------|-------|
+| MCU Board                | STM32 Blue Pill (now configured as F103C8, 64KB flash) |
+| Motor Driver             | SimpleFOC Mini v1.0 (DRV8313) |
+| Motor                    | Sensorless BLDC (example: 24V, 50KV) |
+| Motor Supply (VM)        | 12V (adjust per motor & driver limits) |
+| Logic Supply             | 3.3V (shared between Blue Pill & driver logic) |
+| Programmer               | ST-Link (SWD) |
+| Serial Debug Adapter     | USB‑TTL (3.3V) on PA2/PA3 |
 
-1. **Serial Communication Setup**: Initializes serial communication at 115200 baud rate
-2. **Startup Message**: Sends a "Blue Pill is alive!" message on startup
-3. **Uptime Monitoring**: Continuously prints the system uptime in milliseconds every second
+> If your physical MCU is the smaller C6 (32KB flash), the full SimpleFOC library may not fit. The project is set to `bluepill_f103c8` for extra flash headroom.
 
-## Code Overview
+## Wiring Guide
 
-### Main Functions
+Essential connections (grounds common):
 
-- `setup()`: 
-  - Initializes serial communication at 115200 baud
-  - Waits 2 seconds for serial monitor connection
-  - Prints startup confirmation message
+| Blue Pill Pin | SimpleFOC Mini | Purpose |
+|---------------|----------------|---------|
+| PA8           | IN1 / PWM1     | Phase A PWM |
+| PA9           | IN2 / PWM2     | Phase B PWM |
+| PA10          | IN3 / PWM3     | Phase C PWM |
+| PB12          | EN / nSLEEP    | Driver enable (active HIGH) |
+| 3.3V          | 3.3V / VCC     | Logic power (if board expects it) |
+| GND           | GND            | Common ground |
+| PA2 (TX2)     | USB‑TTL RX     | Debug serial out |
+| PA3 (RX2)     | USB‑TTL TX     | Debug serial in |
+| VM (driver)   | 12V supply +   | Motor power (separate from 3.3V) |
 
-- `loop()`:
-  - Prints current uptime using `millis()` function
-  - Delays for 1 second between updates
+Motor phases → OUT_A / OUT_B / OUT_C (order arbitrary; swap any two to invert direction if needed).
 
-## Dependencies
+Optional (not used yet):
+- nFAULT → free GPIO with pull‑up for diagnostics.
+- Add a sensor (magnetic / encoder) later to move from open-loop to full FOC.
 
-- **Simple FOC Library**: Version 2.3.5 (configured but not used in current code)
+## open-loop Behavior & Tuning
 
-## Building and Uploading
+Open-loop (no sensor) approximates rotation and may:
+- Cog or stall at very low speeds.
+- Require a minimum target velocity to start.
+- Produce less torque and efficiency than closed-loop FOC.
 
-### Prerequisites
+Key parameters in `src/main.cpp`:
+| Parameter | Purpose | Default |
+|-----------|---------|---------|
+| `MOTOR_POLE_PAIRS` | Set to your motor's pole pairs (magnets/2) | 7 |
+| `SUPPLY_VOLTAGE` | Motor supply (for voltage mapping) | 12.0 |
+| `VOLTAGE_LIMIT` | Limits applied phase voltage | 4.0 |
+| `target_velocity` | Initial open-loop speed (rad/s) | 10.0 |
 
-- PlatformIO Core or PlatformIO IDE
-- ST-Link programmer/debugger
+Adjust `VOLTAGE_LIMIT` upward gradually if the motor fails to start (watch heat). Increase `target_velocity` for easier startup (e.g. 20–40 rad/s), then reduce.
 
-### Commands
+Rough conversion: rpm ≈ rad/s * 60 / (2π)
 
+## Serial Command Interface
+
+Open a monitor at 115200 baud on `Serial2` (PA2/PA3 wiring). Send:
+
+```
+v 30      # set target velocity to 30 rad/s (~286 rpm)
+v -15     # reverse direction
+```
+
+You will see periodic status lines:
+```
+vel target(rad/s): 10.00  est mech rpm ~95.5
+```
+
+## Build & Upload
+
+Prerequisites:
+- PlatformIO (CLI or IDE)
+- ST-Link connected (SWDIO, SWCLK, GND, 3.3V ref, NRST optional)
+
+Commands:
 ```bash
-# Build the project
+# Build
 platformio run
 
-# Upload to the board
+# Upload
 platformio run --target upload
 
-# Monitor serial output
+# Serial monitor (adjust port)
 platformio device monitor
 ```
 
-## Serial Output
+## `platformio.ini` Notes
 
-### Hardware Connection for Serial Communication
+Important entries:
+```
+board = bluepill_f103c8
+lib_deps = askuric/Simple FOC@^2.3.5
+build_flags = -Os -flto
+```
+Optimization flags help keep the binary within flash limits.
 
-To read the serial output from the Blue Pill, you need to connect it to your computer via a USB-to-Serial adapter:
+## Safety & Power Tips
 
-1. **Connect USB-to-Serial Adapter**:
-   - VCC (3.3V) → Blue Pill 3.3V pin
-   - GND → Blue Pill GND pin
-   - RX → Blue Pill PA9 (TX pin)
-   - TX → Blue Pill PA10 (RX pin)
+1. Always connect GND first; disconnect VM last.
+2. Keep fingers and loose items clear of the spinning motor.
+3. If the motor vibrates without spinning: increase `target_velocity` or `VOLTAGE_LIMIT` slightly.
+4. If it gets hot quickly: lower `VOLTAGE_LIMIT` and re-test.
+5. For better performance, add a position sensor (AS5600, AS5048A, hall, or encoder) and switch to full FOC (`motion_control = velocity` or `angle`).
 
-2. **Alternative**: If your Blue Pill has a built-in USB connector, you can use it directly after enabling USB CDC in the code.
+## Moving to Closed-Loop Later
 
-### Reading Serial Output
-
-**Using CuteCom (Linux)**:
-```bash
-# Install CuteCom
-sudo apt install cutecom
-
-# Launch CuteCom
-cutecom
+Add a magnetic or encoder sensor and replace:
+```
+motor.controller = MotionControlType::velocity_openloop;
+```
+with (example):
+```
+motor.controller = MotionControlType::velocity;
+motor.sensor = &mySensor;
+motor.initFOC();
 ```
 
-In CuteCom:
-- Select the correct device (usually `/dev/ttyUSB0` or `/dev/ttyACM0`)
-- Set baud rate to `115200`
-- Set data bits to `8`, parity to `None`, stop bits to `1`
-- Click "Open device"
+## Troubleshooting Quick List
 
-**Using PlatformIO Monitor**:
-```bash
-platformio device monitor
-```
+| Symptom | Possible Cause | Fix |
+|---------|----------------|-----|
+| No serial output | Wrong pins / port | Use PA2/PA3 @ 115200; select correct /dev/tty* |
+| Motor twitches only | Too low voltage / speed | Raise `VOLTAGE_LIMIT` or `target_velocity` |
+| Upload fails (OpenOCD) | ST-Link connection | Re-seat SWD wires; try slower adapter speed |
+| Direction opposite | Phase order | Swap any two motor phase wires |
+| Overcurrent / heat | Excess voltage limit | Lower `VOLTAGE_LIMIT` |
 
-**Expected Output**:
-When connected to a serial monitor at 115200 baud, you should see output similar to:
+## License
 
-```
-Blue Pill is alive!
-Uptime: 3000 ms
-Uptime: 4000 ms
-Uptime: 5000 ms
-...
-```
+Educational / personal use. Adjust as needed.
 
-## Configuration
-
-The project is configured in `platformio.ini` with the following settings:
-
-- **Platform**: ST STM32
-- **Board**: Blue Pill F103C6
-- **Framework**: Arduino
-- **Upload Protocol**: ST-Link
-- **Monitor Speed**: 115200 baud
-- **Library Archive**: Disabled
-
-## Getting Started
-
-1. **Hardware Setup**:
-   - Connect your STM32 Blue Pill to your ST-Link programmer
-   - Connect the ST-Link to your computer via USB
-   - Connect a USB-to-Serial adapter to the Blue Pill for serial communication (see Serial Output section above)
-
-2. **Software Setup**:
-   - Build and upload the firmware using PlatformIO
-   - Open CuteCom or another serial monitor to view the output
-
-## Troubleshooting
-
-- Ensure ST-Link drivers are properly installed
-- Verify the Blue Pill is properly connected to the ST-Link
-- Check USB-to-Serial adapter connections (TX/RX pins)
-- Verify the correct COM port/device is selected in the serial monitor (`/dev/ttyUSB0`, `/dev/ttyACM0`, etc.)
-- Confirm the baud rate is set to 115200
-- On Linux, you may need to add your user to the `dialout` group: `sudo usermod -a -G dialout $USER`
+---
+Feel free to extend this with sensors, current sensing, or multi-motor control.
