@@ -21,6 +21,7 @@ Arduino/PlatformIO project driving a sensorless BLDC motor using a SimpleFOC Min
 | Logic Supply             | 3.3V (shared between Blue Pill & driver logic) |
 | Programmer               | ST-Link (SWD) |
 | Serial Debug Adapter     | USB‑TTL (3.3V) on PA2/PA3 |
+| Optional Encoder         | MT6701 (ABZ incremental mode) |
 
 > If your physical MCU is the smaller C6 (32KB flash), the full SimpleFOC library may not fit. The project is set to `bluepill_f103c8` for extra flash headroom.
 
@@ -45,6 +46,20 @@ Motor phases → OUT_A / OUT_B / OUT_C (order arbitrary; swap any two to invert 
 Optional (not used yet):
 - nFAULT → free GPIO with pull‑up for diagnostics.
 - Add a sensor (magnetic / encoder) later to move from open-loop to full FOC.
+
+### MT6701 Encoder (ABZ Mode) Wiring
+
+| MT6701 | Blue Pill | Notes |
+|--------|-----------|-------|
+| VCC    | 3.3V      | Power (keep leads short, decouple with 100nF) |
+| GND    | GND       | Common ground |
+| A      | PA0       | TIM2 CH1 (hardware quadrature capable) |
+| B      | PA1       | TIM2 CH2 |
+| Z (Index) | PB4 (optional) | Not used by SimpleFOC core yet in this test; can observe manually |
+
+Outputs are push‑pull by default → no pull‑ups required. If you configured open‑drain mode, add ~10k pull‑ups to 3.3V on A/B/Z.
+
+Cable tips: twist (A,GND) and (B,GND) pairs or use shield if noisy. Keep distance from high current phase wires.
 
 ## open-loop Behavior & Tuning
 
@@ -106,6 +121,51 @@ lib_deps = askuric/Simple FOC@^2.3.5
 build_flags = -Os -flto
 ```
 Optimization flags help keep the binary within flash limits.
+
+## Encoder Test Mode (MT6701 ABZ)
+
+Before enabling closed-loop FOC, you can verify encoder wiring with a dedicated test build included in `src/main.cpp`.
+
+1. Set the macro at the top of `main.cpp`:
+	```c++
+	#define MODE_ENCODER_TEST 1   // enable encoder test
+	```
+	Set back to `0` to return to the motor open-loop demo.
+
+2. Adjust the placeholder:
+	```c++
+	static const uint32_t ENCODER_CPR = 8192; // set to your configured resolution
+	```
+	MT6701 common incremental resolutions: 1024, 2048, 4096, 8192 CPR (after quadrature). Use the actual quadrature edge count (i.e. 4 * PPR).
+
+3. Flash the firmware and open the Serial2 monitor (PA2/PA3) at 115200 baud.
+
+4. Output columns (tab separated):
+	```
+	angle_rad    velocity_rad_s    rawApproxCounts
+	```
+
+5. Commands:
+	- `z` : capture current angle as zero (software offset)
+	- `r` : toggle fast streaming (~500 Hz) / slow (20 Hz)
+
+6. Validation steps:
+	- Rotate shaft slowly forward → angle increases smoothly.
+	- Reverse direction → angle decreases (or invert later using `encoder.direction = Direction::CCW;`).
+	- One full revolution ≈ `ENCODER_CPR` change in `rawApproxCounts` (after zeroing).
+	- Velocity near zero while stationary; proportional to speed when moving.
+
+If angle direction is inverted you can either swap A/B lines or (preferred) set direction in code when moving to closed-loop.
+
+### Transition to Closed-Loop FOC
+After encoder verification:
+1. Set `MODE_ENCODER_TEST` back to 0.
+2. Instantiate and init the encoder in the motor section.
+3. Call `motor.linkSensor(&encoder);` then `motor.initFOC();`.
+4. Switch controller type (e.g. `motor.controller = MotionControlType::velocity;`).
+5. Use `loopFOC();` + `move(target);` in `loop()`.
+
+Ask if you want a prepared closed-loop example.
 
 ## Safety & Power Tips
 
