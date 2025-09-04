@@ -1,5 +1,13 @@
-// Set to 1 to build the encoder wiring test, 0 for the motor open-loop example
-#define MODE_ENCODER_TEST 1
+// Mode selection (set one of these to 1, others to 0)
+// 0: disabled
+// Exactly one should be 1 at a time.
+#define MODE_POLEPAIR_TEST 1      // automatic estimation of motor pole pairs using encoder
+#define MODE_ENCODER_TEST 0       // encoder wiring / basic angle+velocity view
+#define MODE_OPEN_LOOP 0          // original open-loop velocity demo (no encoder)
+
+#if ( (MODE_POLEPAIR_TEST + MODE_ENCODER_TEST + MODE_OPEN_LOOP) != 1 )
+#error "Exactly one MODE_XXX macro must be set to 1"
+#endif
 
 #include <Arduino.h>
 #include <HardwareSerial.h>
@@ -10,7 +18,135 @@
 HardwareSerial Serial2(USART2);
 #endif
 
-#if MODE_ENCODER_TEST
+#if MODE_POLEPAIR_TEST
+// ============================= POLE PAIR DETECTION TEST =============================
+// Requires: Encoder mounted and wired (A=PA0, B=PA1). Motor phases connected. Driver EN on PB12.
+// Principle: Sweep a known span of electrical angle while applying a small voltage.
+// Measure mechanical angle change via encoder.  pole_pairs ≈ electrical_angle_span / mechanical_angle_span.
+
+// Pin assignments (same as other modes)
+static const uint8_t PIN_PWM_A = PA8;
+static const uint8_t PIN_PWM_B = PA9;
+static const uint8_t PIN_PWM_C = PA10;
+static const uint8_t PIN_EN    = PB12;
+
+// Encoder pins
+static const uint8_t PIN_ENC_A = PA0;
+static const uint8_t PIN_ENC_B = PA1;
+
+// Detection parameters
+static const float SUPPLY_VOLTAGE = 12.0f;     // motor supply
+static const float DETECT_VOLTAGE = 2.5f;      // phase voltage magnitude during sweep (raise carefully if motor doesn't move)
+static const int   MAX_ELECTRICAL_REV = 14;    // sweep up to this many electrical revolutions
+static const float STEP_E_ANGLE = 0.02f;       // electrical angle step (rad)
+static const uint32_t SETTLE_US = 2000;        // microseconds settle each step (2ms)
+
+// Encoder CPR (quadrature counts per mechanical revolution)
+static const uint32_t ENCODER_CPR = 1024; // set to your encoder configuration for informational prints
+
+// We construct a minimal BLDCMotor just to reuse setPhaseVoltage(). Pole pairs placeholder=1 (not used for manual angle).
+BLDCMotor motor_dummy(1);
+BLDCDriver3PWM driver(PIN_PWM_A, PIN_PWM_B, PIN_PWM_C, PIN_EN);
+Encoder encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_CPR);
+void doA(){ encoder.handleA(); }
+void doB(){ encoder.handleB(); }
+
+// Helper to apply an electrical angle with desired q-axis voltage (sine voltage vector)
+static inline void applyElectricalAngle(float angle_el){
+    // Use SimpleFOC motor API: Uq = DETECT_VOLTAGE, Ud = 0
+    motor_dummy.setPhaseVoltage(DETECT_VOLTAGE, 0.0f, angle_el);
+}
+
+void setup(){
+    Serial2.begin(115200);
+    delay(300);
+    Serial2.println(F("Pole Pair Detection Test"));
+    Serial2.println(F("Ensure rotor is free. It will rotate slowly."));
+    Serial2.println(F("If it stalls: increase DETECT_VOLTAGE (code) modestly."));
+
+    // Init driver
+    driver.voltage_power_supply = SUPPLY_VOLTAGE;
+    driver.voltage_limit = DETECT_VOLTAGE + 0.5f; // small headroom
+    driver.pwm_frequency = 25000;
+    driver.init();
+
+    // Link motor_dummy to driver
+    motor_dummy.linkDriver(&driver);
+    motor_dummy.voltage_limit = DETECT_VOLTAGE + 0.5f;
+    motor_dummy.init(); // does not perform FOC since no sensor linked
+
+    // Init encoder
+    encoder.quadrature = Quadrature::ON;
+    encoder.pullup = Pullup::USE_EXTERN;
+    encoder.init();
+    encoder.enableInterrupts(doA, doB);
+    delay(100);
+
+    pinMode(PIN_EN, OUTPUT);
+    digitalWrite(PIN_EN, HIGH);
+    Serial2.println(F("Starting sweep..."));
+
+    float start_angle = encoder.getAngle();
+    float prev_angle = start_angle;
+    float mech_unwrapped = 0.0f; // accumulated mechanical angle change (can be >2π)
+
+    const float total_e_span = TWO_PI * (float)MAX_ELECTRICAL_REV;
+    float e_angle = 0.0f;
+    uint32_t lastPrint = millis();
+    uint32_t steps = 0;
+
+    while(e_angle <= total_e_span){
+        applyElectricalAngle(fmodf(e_angle, TWO_PI));
+        delayMicroseconds(SETTLE_US);
+        encoder.update();
+        float a = encoder.getAngle();
+        float delta = a - prev_angle;
+        if(delta > PI) delta -= TWO_PI;
+        else if(delta < -PI) delta += TWO_PI;
+        mech_unwrapped += delta;
+        prev_angle = a;
+        e_angle += STEP_E_ANGLE;
+        steps++;
+        if(millis() - lastPrint > 500){
+            lastPrint = millis();
+            Serial2.print(F("Progress: e_rev="));
+            Serial2.print(e_angle / TWO_PI, 2);
+            Serial2.print(F(" mech_span(rad)="));
+            Serial2.print(fabs(mech_unwrapped), 3);
+            Serial2.println();
+        }
+        // Early exit if we've already spanned > 1.2 mechanical revs (enough for estimate)
+        if(fabs(mech_unwrapped) >= (2.0f * TWO_PI * 1.2f)) break;
+    }
+
+    // Remove drive
+    motor_dummy.setPhaseVoltage(0,0,0);
+    Serial2.println(F("Sweep done."));
+
+    float mech_span = fabs(mech_unwrapped);
+    if(mech_span < 0.2f){
+        Serial2.println(F("[FAIL] Mechanical span too small - increase DETECT_VOLTAGE."));
+        return;
+    }
+    float e_span_used = min(e_angle, total_e_span);
+    float pole_pairs_est = e_span_used / mech_span;
+    int pole_pairs_round = (int)lroundf(pole_pairs_est);
+    if(pole_pairs_round < 1) pole_pairs_round = 1;
+    if(pole_pairs_round > 60) pole_pairs_round = 60; // sanity
+
+    Serial2.print(F("Electrical span used (rad): ")); Serial2.println(e_span_used, 3);
+    Serial2.print(F("Mechanical span (rad): ")); Serial2.println(mech_span, 3);
+    Serial2.print(F("Estimated pole pairs: ")); Serial2.println(pole_pairs_est, 3);
+    Serial2.print(F("Rounded pole pairs: ")); Serial2.println(pole_pairs_round);
+    Serial2.println(F("Verify by running again or by closed-loop test later."));
+    Serial2.println(F("Set your MOTOR_POLE_PAIRS to the rounded value."));
+}
+
+void loop(){
+    // Nothing continuous required; test completes in setup.
+}
+
+#elif MODE_ENCODER_TEST
 // ============================= ENCODER WIRING TEST =============================
 // MT6701 in ABZ (incremental) mode
 // Recommended wiring:
