@@ -9,6 +9,8 @@ Arduino/PlatformIO project driving a sensorless BLDC motor using a SimpleFOC Min
 3. Driver enable (EN / nSLEEP) on PB12 (kept low during init, then enabled).
 4. Debug serial on `Serial2` (USART2: PA2=TX, PA3=RX) at 115200 baud.
 5. Runtime velocity command over serial: `v <rad_per_s>` (e.g. `v 25`).
+6. Encoder wiring verification mode (high‑rate angle / velocity streaming).
+7. Automatic motor pole pair estimation sweep (requires encoder) → prints estimated & rounded pole pairs.
 
 ## Hardware Summary
 
@@ -166,6 +168,68 @@ After encoder verification:
 5. Use `loopFOC();` + `move(target);` in `loop()`.
 
 Ask if you want a prepared closed-loop example.
+
+## Pole Pair Detection Mode (Automatic Estimation)
+
+Use this mode to automatically estimate the motor's mechanical pole pairs using a connected incremental encoder. The firmware sweeps a known electrical angle while applying a small q‑axis voltage and measures the resulting mechanical span from the encoder. Estimated pole pairs ≈ (electrical angle swept) / (mechanical angle moved).
+
+### When to Use
+Run this once (or a couple of times) when you don't know the motor's pole pair count, before setting `MOTOR_POLE_PAIRS` for open‑loop tuning or moving to closed‑loop FOC. Requires the encoder already wired (A=PA0, B=PA1) and functioning.
+
+### Enabling the Mode
+At the top of `src/main.cpp` set only this macro to 1:
+```c++
+#define MODE_POLEPAIR_TEST 1
+#define MODE_ENCODER_TEST 0
+#define MODE_OPEN_LOOP 0
+```
+
+### Wiring Prerequisites
+- Encoder A → PA0, B → PA1 (quadrature)
+- Driver EN → PB12, phase PWMs → PA8/PA9/PA10 (same as other modes)
+- Motor phases connected; rotor free to rotate (not mechanically loaded)
+
+### Key Parameters (in code)
+| Parameter | Meaning | Default |
+|-----------|---------|---------|
+| `DETECT_VOLTAGE` | Sine voltage magnitude applied during sweep | 2.5 V |
+| `MAX_ELECTRICAL_REV` | Max electrical revolutions to sweep before stopping | 14 |
+| `STEP_E_ANGLE` | Electrical angle step size (rad) | 0.02 |
+| `SETTLE_US` | Microseconds to wait after each step | 2000 |
+
+Increase `DETECT_VOLTAGE` carefully (small increments) if the rotor does not move or stalls (watch temperature & current). Lower it if the motion is abrupt.
+
+### Running & Output
+1. Build & flash.
+2. Open Serial2 (115200). You'll see:
+	- Intro & safety notes
+	- Periodic progress lines: `Progress: e_rev=<electrical_revs> mech_span(rad)=<accumulated_mech_angle>` every ~0.5 s
+3. The test stops early once enough mechanical span (> ~1.2 revs) is collected, or after the configured electrical span.
+4. Final lines:
+```
+Electrical span used (rad): <value>
+Mechanical span (rad): <value>
+Estimated pole pairs: <float>
+Rounded pole pairs: <integer>
+```
+
+Use the rounded integer as your `MOTOR_POLE_PAIRS` value elsewhere in the project. If consecutive runs disagree by more than ±1, increase sweep span (`MAX_ELECTRICAL_REV`) or improve mechanical freedom / increase `DETECT_VOLTAGE` slightly.
+
+### Failure / Edge Cases
+| Message | Cause | Action |
+|---------|-------|--------|
+| `[FAIL] Mechanical span too small` | Rotor hardly moved | Raise `DETECT_VOLTAGE`, ensure no load |
+| Very noisy estimate | Mechanical backlash / stiction | Increase voltage slightly; ensure shaft turns smoothly |
+| Estimate off by exactly 2× | Misinterpreting pole count (remember pole pairs = magnet count / 2) | Re-run and confirm; count magnets if possible |
+
+### After Detection
+1. Copy the rounded pole pair number.
+2. Switch back to open‑loop or encoder test mode by toggling macros.
+3. Set `MOTOR_POLE_PAIRS` (open‑loop) or use it when configuring closed‑loop FOC.
+
+> Tip: Keep a note of the final pole pair count in this README (e.g. "My motor: 7 pole pairs").
+
+---
 
 ## Safety & Power Tips
 
