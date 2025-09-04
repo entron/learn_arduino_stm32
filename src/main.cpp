@@ -1,11 +1,12 @@
 // Mode selection (set one of these to 1, others to 0)
 // 0: disabled
 // Exactly one should be 1 at a time.
-#define MODE_POLEPAIR_TEST 1      // automatic estimation of motor pole pairs using encoder
-#define MODE_ENCODER_TEST 0       // encoder wiring / basic angle+velocity view
-#define MODE_OPEN_LOOP 0          // original open-loop velocity demo (no encoder)
+#define MODE_POLEPAIR_TEST 0        // automatic estimation of motor pole pairs using encoder
+#define MODE_ENCODER_TEST 0         // encoder wiring / basic angle+velocity view
+#define MODE_OPEN_LOOP 0            // original open-loop velocity demo (no encoder)
+#define MODE_VELOCITY_CLOSED_LOOP 1 // NEW: closed-loop velocity control using encoder
 
-#if ( (MODE_POLEPAIR_TEST + MODE_ENCODER_TEST + MODE_OPEN_LOOP) != 1 )
+#if ( (MODE_POLEPAIR_TEST + MODE_ENCODER_TEST + MODE_OPEN_LOOP + MODE_VELOCITY_CLOSED_LOOP) != 1 )
 #error "Exactly one MODE_XXX macro must be set to 1"
 #endif
 
@@ -230,7 +231,7 @@ void loop(){
     }
 }
 
-#else
+#elif MODE_OPEN_LOOP
 // ============================= ORIGINAL OPEN-LOOP MOTOR EXAMPLE =============================
 // (Set MODE_ENCODER_TEST to 0 to use this block)
 
@@ -300,4 +301,147 @@ void loop(){
     }
 }
 
+#elif MODE_VELOCITY_CLOSED_LOOP
+// ============================= CLOSED-LOOP VELOCITY CONTROL (FOC) =============================
+// Requirements: Set correct MOTOR_POLE_PAIRS and ENCODER_CPR. Encoder wired (A=PA0,B=PA1).
+// Commands over Serial2 (115200):
+//   v <rad_per_s>   set target velocity (example: v 20)
+//   s               stop (target=0)
+//   p               single status print
+//   r               toggle continuous 5Hz telemetry
+//   z               zero (software) mechanical angle reference
+// Typical tune starting points (adjust for your motor/driver):
+//   PID_velocity.P = 0.3 .. 2.0   (increase until response is snappy but stable)
+//   PID_velocity.I = 5 .. 40      (integrator to remove steady error – watch for windup)
+//   PID_velocity.D = 0            (often 0 for many small motors)
+//   LPF_velocity.Tf = 0.02 .. 0.1 (increase for more smoothing, at expense of lag)
+
+static const uint8_t MOTOR_POLE_PAIRS = 11;      // <<< set to detected/known pole pairs
+static const uint32_t ENCODER_CPR = 1024;       // <<< set to your encoder CPR (quadrature counts)
+static const float SUPPLY_VOLTAGE = 12.0f;
+static const float VOLTAGE_LIMIT = 6.0f;        // limit phase voltage (adjust for current / heating)
+static const float CURRENT_VELOCITY_TARGET_DEFAULT = 10.0f; // rad/s
+
+// Pins (same convention as other modes)
+static const uint8_t PIN_EN = PB12;
+static const uint8_t PIN_PWM_A = PA8;
+static const uint8_t PIN_PWM_B = PA9;
+static const uint8_t PIN_PWM_C = PA10;
+static const uint8_t PIN_ENC_A = PA0;
+static const uint8_t PIN_ENC_B = PA1;
+
+BLDCMotor motor(MOTOR_POLE_PAIRS);
+BLDCDriver3PWM driver(PIN_PWM_A, PIN_PWM_B, PIN_PWM_C, PIN_EN);
+Encoder encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_CPR);
+void encA(){ encoder.handleA(); }
+void encB(){ encoder.handleB(); }
+
+static float target_velocity = CURRENT_VELOCITY_TARGET_DEFAULT; // rad/s
+static float zeroAngle = 0.0f; // software zero reference
+static bool stream = true;     // periodic telemetry
+unsigned long lastStream = 0;
+
+void cliHandle(){
+    if(!Serial2.available()) return;
+    char c = Serial2.peek();
+    if(c=='v' || c=='V'){
+        String line = Serial2.readStringUntil('\n');
+        int sp = line.indexOf(' ');
+        if(sp>0){
+            float val = line.substring(sp+1).toFloat();
+            if(fabs(val) < 1000.0f){
+                target_velocity = val;
+                Serial2.print(F("[OK] target_velocity=")); Serial2.println(target_velocity,3);
+            } else Serial2.println(F("[ERR] out of range"));
+        } else Serial2.println(F("Usage: v <rad_per_s>"));
+    } else {
+        char cmd = Serial2.read(); // consume single char commands
+        switch(cmd){
+            case 's': case 'S': target_velocity = 0; Serial2.println(F("[Stop] target=0")); break;
+            case 'p': case 'P': {
+                float vel = motor.sensor_direction * encoder.getVelocity();
+                Serial2.print(F("vel(meas)=")); Serial2.print(vel,3);
+                Serial2.print(F(" rad/s  target=")); Serial2.print(target_velocity,3);
+                Serial2.print(F("  angle=")); Serial2.println(encoder.getAngle()-zeroAngle,3);
+            } break;
+            case 'r': case 'R': stream = !stream; Serial2.print(F("[Stream]=")); Serial2.println(stream?"ON":"OFF"); break;
+            case 'z': case 'Z': zeroAngle = encoder.getAngle(); Serial2.println(F("[Zero] captured")); break;
+            default: /* ignore */ break;
+        }
+    }
+}
+
+void setup(){
+    Serial2.begin(115200);
+    delay(300);
+    Serial2.println(F("Closed-loop Velocity FOC Demo"));
+    Serial2.println(F("Commands: v <rad_s>, s, p, r, z"));
+    pinMode(PIN_EN, OUTPUT); digitalWrite(PIN_EN, LOW);
+
+    // Driver config
+    driver.voltage_power_supply = SUPPLY_VOLTAGE;
+    driver.voltage_limit = VOLTAGE_LIMIT;
+    driver.pwm_frequency = 25000; // 25kHz
+    driver.init();
+
+    // Encoder config
+    encoder.quadrature = Quadrature::ON;
+    encoder.pullup = Pullup::USE_EXTERN; // push-pull outputs assumed
+    encoder.init();
+    encoder.enableInterrupts(encA, encB);
+    delay(50);
+
+    // Link sensor & driver
+    motor.linkSensor(&encoder);
+    motor.linkDriver(&driver);
+
+    // Motion controller & limits
+    motor.controller = MotionControlType::velocity;
+    motor.voltage_limit = VOLTAGE_LIMIT; // ensures safety
+    motor.foc_modulation = FOCModulationType::SinePWM;
+
+    // Velocity PID & LPF (initial guesses – tune live)
+    motor.PID_velocity.P = 0.6f;   // proportional
+    motor.PID_velocity.I = 15.0f;  // integral
+    motor.PID_velocity.D = 0.0f;   // derivative (often not needed)
+    motor.PID_velocity.output_ramp = 1000.0f; // (rad/s^2 in voltage equivalent)
+    motor.PID_velocity.limit = VOLTAGE_LIMIT; // clamp output (voltage request)
+    motor.LPF_velocity.Tf = 0.05f; // low-pass filter time constant (s)
+
+    // Align & init FOC
+    motor.init();
+    motor.initFOC();
+
+    digitalWrite(PIN_EN, HIGH); // enable gate driver
+
+    Serial2.println(F("FOC init complete."));
+    Serial2.print(F("Zero electrical angle offset: "));
+    Serial2.println(motor.zero_electric_angle,4);
+    Serial2.print(F("Direction: "));
+    Serial2.println(motor.sensor_direction == Direction::CW ? F("CW") : F("CCW"));
+    Serial2.print(F("Starting target vel(rad/s): ")); Serial2.println(target_velocity,3);
+}
+
+void loop(){
+    cliHandle();
+    // Core FOC tasks
+    motor.loopFOC();               // update FOC & read sensor
+    motor.move(target_velocity);   // run velocity loop
+
+    if(stream){
+        unsigned long now = millis();
+        if(now - lastStream > 200){ // 5Hz
+            lastStream = now;
+            float angle = encoder.getAngle() - zeroAngle;
+            float vel = encoder.getVelocity();
+            Serial2.print(F("tgt=")); Serial2.print(target_velocity,2);
+            Serial2.print(F(" rad/s  vel=")); Serial2.print(vel,2);
+            Serial2.print(F("  angle=")); Serial2.print(angle,2);
+            Serial2.print(F("  elA(rad)=")); Serial2.println(motor.electrical_angle,2);
+        }
+    }
+}
+
+#else
+#error "No mode selected (internal error)"
 #endif

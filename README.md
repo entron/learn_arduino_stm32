@@ -1,16 +1,17 @@
-# STM32 Blue Pill + SimpleFOC Mini (Sensorless Open-Loop) Project
+# STM32 Blue Pill + SimpleFOC Mini (Open-Loop & Closed-Loop Velocity FOC)
 
-Arduino/PlatformIO project driving a sensorless BLDC motor using a SimpleFOC Mini v1.0 (DRV8313 based) and an STM32 Blue Pill.
+Arduino/PlatformIO project for a BLDC motor on a SimpleFOC Mini v1.0 (DRV8313) + STM32 Blue Pill, featuring multiple selectable firmware modes: open‑loop (sensorless), encoder test, automatic pole pair estimation, and full closed‑loop FOC velocity control with an incremental encoder.
 
 ## Current Firmware Features
 
-1. Open‑loop (sensorless) velocity control using SimpleFOC `BLDCMotor` + `BLDCDriver3PWM`.
-2. 3‑phase PWM on TIM1 pins: PA8 / PA9 / PA10.
-3. Driver enable (EN / nSLEEP) on PB12 (kept low during init, then enabled).
-4. Debug serial on `Serial2` (USART2: PA2=TX, PA3=RX) at 115200 baud.
-5. Runtime velocity command over serial: `v <rad_per_s>` (e.g. `v 25`).
-6. Encoder wiring verification mode (high‑rate angle / velocity streaming).
-7. Automatic motor pole pair estimation sweep (requires encoder) → prints estimated & rounded pole pairs.
+1. Closed‑loop FOC velocity control (encoder based) with PID + LPF tuning interface.
+2. Open‑loop (sensorless) velocity control using SimpleFOC `BLDCMotor` + `BLDCDriver3PWM`.
+3. Encoder wiring / signal integrity test streaming angle & velocity.
+4. Automatic motor pole pair estimation sweep (encoder required).
+5. 3‑phase PWM on TIM1 pins: PA8 / PA9 / PA10 (high‑frequency SinePWM).
+6. Driver enable (EN / nSLEEP) on PB12 (low during init for safety).
+7. Debug serial on `Serial2` (USART2: PA2=TX, PA3=RX) at 115200 baud.
+8. Interactive CLI commands for each mode (velocity set, streaming toggle, zero reference, etc.).
 
 ## Hardware Summary
 
@@ -63,7 +64,90 @@ Outputs are push‑pull by default → no pull‑ups required. If you configured
 
 Cable tips: twist (A,GND) and (B,GND) pairs or use shield if noisy. Keep distance from high current phase wires.
 
-## open-loop Behavior & Tuning
+## Firmware Mode Selection
+
+Switch modes by editing the macros at the very top of `src/main.cpp` (exactly one must be `1`):
+
+```c
+#define MODE_POLEPAIR_TEST 0        // automatic estimation of motor pole pairs using encoder
+#define MODE_ENCODER_TEST 0         // encoder wiring / angle+velocity streaming
+#define MODE_OPEN_LOOP 0            // sensorless open-loop velocity demo
+#define MODE_VELOCITY_CLOSED_LOOP 1 // closed-loop FOC velocity control (encoder)
+```
+
+### Summary of Modes
+| Mode | Purpose | Requires Encoder | Typical Use |
+|------|---------|------------------|-------------|
+| `MODE_ENCODER_TEST` | Validate wiring & CPR, observe angle/velocity | Yes | First bring-up of sensor |
+| `MODE_POLEPAIR_TEST` | Estimate mechanical pole pairs | Yes | When motor pole pairs unknown |
+| `MODE_OPEN_LOOP` | Simple sensorless spin & sanity test | No | Quick functional test |
+| `MODE_VELOCITY_CLOSED_LOOP` | Full FOC velocity loop (PID) | Yes | Actual application / performance |
+
+> After determining pole pairs and confirming encoder CPR/direction, use the closed‑loop mode for best torque, low‑speed smoothness, and efficiency.
+
+## Closed-Loop Velocity FOC Mode
+
+Enabled when `MODE_VELOCITY_CLOSED_LOOP` = 1. Provides field‑oriented control with an incremental encoder (AB). Adjust these constants near the mode block if needed:
+
+| Constant | Meaning | Example |
+|----------|---------|---------|
+| `MOTOR_POLE_PAIRS` | Mechanical pole pairs (magnets/2) | 7 |
+| `ENCODER_CPR` | Quadrature counts per mechanical revolution | 8192 |
+| `SUPPLY_VOLTAGE` | Driver supply (for voltage mapping) | 12.0 V |
+| `VOLTAGE_LIMIT` | Max q‑axis voltage demand (limits current/heat) | 6.0 V |
+| `target_velocity` | Initial commanded velocity (rad/s) | 10.0 |
+
+### CLI Commands (Serial2 115200)
+```
+v <rad_s>   set target velocity (ex: v 25)
+s           stop (target = 0)
+p           one-shot status line
+r           toggle 5 Hz telemetry streaming
+z           capture current mechanical angle as zero reference
+```
+
+Status line fields (streaming):
+```
+tgt=<target> rad/s  vel=<measured>  angle=<mech_rad>  elA(rad)=<electrical_angle>
+```
+
+### PID & Filter Tuning
+Parameters (inside the closed-loop section in code):
+| Symbol | Typical Start | Effect |
+|--------|---------------|--------|
+| `PID_velocity.P` | 0.4–1.0 | Proportional response (stiffness) |
+| `PID_velocity.I` | 5–25 | Removes steady-state error; too high → oscillation / windup |
+| `PID_velocity.D` | 0 | Derivative damping (often not needed) |
+| `PID_velocity.output_ramp` | 500–2000 | Limits rate of voltage command change |
+| `PID_velocity.limit` | = `VOLTAGE_LIMIT` | Safety clamp of controller output |
+| `LPF_velocity.Tf` | 0.02–0.08 s | Larger smooths noise, adds lag |
+
+Tuning procedure (quick):
+1. Start with moderate `P` (0.5). `I=10`, `D=0`.
+2. Increase `P` until you see slight overshoot / buzz, then back off ~20%.
+3. Increase `I` so steady velocity error < 2–3% (watch for drift while stopped).
+4. Add `LPF_velocity.Tf` if velocity readout is noisy → raise gradually (0.02 → 0.05 → 0.08).
+5. Only add derivative if oscillations persist and can’t be fixed by reducing `P` / `I`.
+
+If the motor spins the wrong direction compared to command, you can:
+* Swap any two motor phase wires (electrically inverts torque), or
+* In code, invert sensor direction before `initFOC()` (e.g. `encoder.direction = Direction::CCW;`).
+
+### Common Closed-Loop Issues
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| Hunts / oscillates | P or I too high | Reduce P first, then I |
+| Slow to reach target | P too low or ramp limit small | Raise P or `output_ramp` |
+| Drifts when target=0 | I windup / bias | Lower I, add small deadband via code, or zero offset |
+| High pitched noise | PWM frequency resonance | Accept or adjust mechanical mounting; driver set to 25 kHz already |
+| Jumps at enable | Improper alignment / wrong pole pairs | Re-run pole pair detection, verify CPR |
+
+### Logging Improvements (Optional Ideas)
+You can add a higher‑rate binary or CSV stream or simple min/max tracking inside the 5 Hz telemetry block. For deeper analysis, temporarily raise streaming frequency and capture with a logic/USB serial tool.
+
+---
+
+## Open-Loop Behavior & Tuning
 
 Open-loop (no sensor) approximates rotation and may:
 - Cog or stall at very low speeds.
@@ -159,15 +243,7 @@ Before enabling closed-loop FOC, you can verify encoder wiring with a dedicated 
 
 If angle direction is inverted you can either swap A/B lines or (preferred) set direction in code when moving to closed-loop.
 
-### Transition to Closed-Loop FOC
-After encoder verification:
-1. Set `MODE_ENCODER_TEST` back to 0.
-2. Instantiate and init the encoder in the motor section.
-3. Call `motor.linkSensor(&encoder);` then `motor.initFOC();`.
-4. Switch controller type (e.g. `motor.controller = MotionControlType::velocity;`).
-5. Use `loopFOC();` + `move(target);` in `loop()`.
-
-Ask if you want a prepared closed-loop example.
+> This test mode is only for signal validation. For real operation switch to `MODE_VELOCITY_CLOSED_LOOP` once CPR & direction are confirmed.
 
 ## Pole Pair Detection Mode (Automatic Estimation)
 
@@ -239,18 +315,14 @@ Use the rounded integer as your `MOTOR_POLE_PAIRS` value elsewhere in the projec
 4. If it gets hot quickly: lower `VOLTAGE_LIMIT` and re-test.
 5. For better performance, add a position sensor (AS5600, AS5048A, hall, or encoder) and switch to full FOC (`motion_control = velocity` or `angle`).
 
-## Moving to Closed-Loop Later
+## Notes on Further Extensions
 
-Add a magnetic or encoder sensor and replace:
-```
-motor.controller = MotionControlType::velocity_openloop;
-```
-with (example):
-```
-motor.controller = MotionControlType::velocity;
-motor.sensor = &mySensor;
-motor.initFOC();
-```
+Potential next steps (not yet implemented in this repo):
+1. Angle (position) control mode with soft motion profiling.
+2. Torque / current (Iq) control (needs current sensing hardware & driver support).
+3. Automatic PID auto‑tune utility & runtime parameter save to flash.
+4. Index (Z) pulse handling for sub‑count absolute referencing.
+5. Lightweight binary telemetry protocol for higher sample rates.
 
 ## Troubleshooting Quick List
 
