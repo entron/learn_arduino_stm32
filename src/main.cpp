@@ -1,9 +1,9 @@
 // Mode selection (set one of these to 1, others to 0)
 // 0: disabled
 // Exactly one should be 1 at a time.
+#define MODE_OPEN_LOOP 0            // original open-loop velocity demo (no encoder)
 #define MODE_POLEPAIR_TEST 0        // automatic estimation of motor pole pairs using encoder
 #define MODE_ENCODER_TEST 0         // encoder wiring / basic angle+velocity view
-#define MODE_OPEN_LOOP 0            // original open-loop velocity demo (no encoder)
 #define MODE_VELOCITY_CLOSED_LOOP 1 // NEW: closed-loop velocity control using encoder
 
 #if ( (MODE_POLEPAIR_TEST + MODE_ENCODER_TEST + MODE_OPEN_LOOP + MODE_VELOCITY_CLOSED_LOOP) != 1 )
