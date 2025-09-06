@@ -360,9 +360,12 @@ void cliHandle(){
             case 's': case 'S': target_velocity = 0; Serial2.println(F("[Stop] target=0")); break;
             case 'p': case 'P': {
                 float vel = motor.sensor_direction * encoder.getVelocity();
+                float mechAngle = (encoder.getAngle()-zeroAngle) * (motor.sensor_direction==Direction::CW?1.0f:-1.0f);
+                float elA = motor.electrical_angle * (motor.sensor_direction==Direction::CW?1.0f:-1.0f);
                 Serial2.print(F("vel(meas)=")); Serial2.print(vel,3);
                 Serial2.print(F(" rad/s  target=")); Serial2.print(target_velocity,3);
-                Serial2.print(F("  angle=")); Serial2.println(encoder.getAngle()-zeroAngle,3);
+                Serial2.print(F("  angle=")); Serial2.print(mechAngle,3);
+                Serial2.print(F("  elA=")); Serial2.println(elA,3);
             } break;
             case 'r': case 'R': stream = !stream; Serial2.print(F("[Stream]=")); Serial2.println(stream?"ON":"OFF"); break;
             case 'z': case 'Z': zeroAngle = encoder.getAngle(); Serial2.println(F("[Zero] captured")); break;
@@ -432,12 +435,14 @@ void loop(){
         unsigned long now = millis();
         if(now - lastStream > 200){ // 5Hz
             lastStream = now;
-            float angle = encoder.getAngle() - zeroAngle;
-            float vel = encoder.getVelocity();
-            Serial2.print(F("tgt=")); Serial2.print(target_velocity,2);
-            Serial2.print(F(" rad/s  vel=")); Serial2.print(vel,2);
-            Serial2.print(F("  angle=")); Serial2.print(angle,2);
-            Serial2.print(F("  elA(rad)=")); Serial2.println(motor.electrical_angle,2);
+            float vel = motor.sensor_direction * encoder.getVelocity();
+            float angle = (encoder.getAngle() - zeroAngle) * (motor.sensor_direction==Direction::CW?1.0f:-1.0f);
+            float elA = motor.electrical_angle * (motor.sensor_direction==Direction::CW?1.0f:-1.0f);
+            // Stream in the requested compact format with unified sign convention
+            Serial2.print("tgt="); Serial2.print(target_velocity,2);
+            Serial2.print(" vel="); Serial2.print(vel,2);
+            Serial2.print(" angle="); Serial2.print(angle,2);
+            Serial2.print(" elA="); Serial2.println(elA,2);
         }
     }
 }
