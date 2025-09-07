@@ -340,6 +340,7 @@ static float target_velocity = CURRENT_VELOCITY_TARGET_DEFAULT; // rad/s
 static float zeroAngle = 0.0f; // software zero reference
 static bool stream = true;     // periodic telemetry
 unsigned long lastStream = 0;
+static bool csvHeaderPending = true; // print CSV header when streaming starts
 
 void cliHandle(){
     if(!Serial2.available()) return;
@@ -359,15 +360,16 @@ void cliHandle(){
         switch(cmd){
             case 's': case 'S': target_velocity = 0; Serial2.println(F("[Stop] target=0")); break;
             case 'p': case 'P': {
+                // Single CSV sample (tgt,vel)
                 float vel = motor.sensor_direction * encoder.getVelocity();
-                float mechAngle = (encoder.getAngle()-zeroAngle) * (motor.sensor_direction==Direction::CW?1.0f:-1.0f);
-                float elA = motor.electrical_angle * (motor.sensor_direction==Direction::CW?1.0f:-1.0f);
-                Serial2.print(F("vel(meas)=")); Serial2.print(vel,3);
-                Serial2.print(F(" rad/s  target=")); Serial2.print(target_velocity,3);
-                Serial2.print(F("  angle=")); Serial2.print(mechAngle,3);
-                Serial2.print(F("  elA=")); Serial2.println(elA,3);
+                Serial2.print(target_velocity, 3); Serial2.print(',');
+                Serial2.println(vel, 3);
             } break;
-            case 'r': case 'R': stream = !stream; Serial2.print(F("[Stream]=")); Serial2.println(stream?"ON":"OFF"); break;
+            case 'r': case 'R':
+                stream = !stream;
+                if(stream) csvHeaderPending = true; // re-print header when streaming resumes
+                Serial2.print(F("[Stream]=")); Serial2.println(stream?"ON":"OFF");
+                break;
             case 'z': case 'Z': zeroAngle = encoder.getAngle(); Serial2.println(F("[Zero] captured")); break;
             default: /* ignore */ break;
         }
@@ -423,6 +425,9 @@ void setup(){
     Serial2.print(F("Direction: "));
     Serial2.println(motor.sensor_direction == Direction::CW ? F("CW") : F("CCW"));
     Serial2.print(F("Starting target vel(rad/s): ")); Serial2.println(target_velocity,3);
+    // CSV header for streaming output (tgt,vel)
+    Serial2.println(F("tgt,vel"));
+    csvHeaderPending = false;
 }
 
 void loop(){
@@ -436,13 +441,13 @@ void loop(){
         if(now - lastStream > 200){ // 5Hz
             lastStream = now;
             float vel = motor.sensor_direction * encoder.getVelocity();
-            float angle = (encoder.getAngle() - zeroAngle) * (motor.sensor_direction==Direction::CW?1.0f:-1.0f);
-            float elA = motor.electrical_angle * (motor.sensor_direction==Direction::CW?1.0f:-1.0f);
-            // Stream in the requested compact format with unified sign convention
-            Serial2.print("tgt="); Serial2.print(target_velocity,2);
-            Serial2.print(" vel="); Serial2.print(vel,2);
-            Serial2.print(" angle="); Serial2.print(angle,2);
-            Serial2.print(" elA="); Serial2.println(elA,2);
+            if(csvHeaderPending){
+                Serial2.println(F("tgt,vel"));
+                csvHeaderPending = false;
+            }
+            // CSV: tgt,vel
+            Serial2.print(target_velocity, 3); Serial2.print(',');
+            Serial2.println(vel, 3);
         }
     }
 }

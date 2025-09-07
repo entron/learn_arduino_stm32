@@ -12,6 +12,7 @@ Arduino/PlatformIO project for a BLDC motor on a SimpleFOC Mini v1.0 (DRV8313) +
 6. Driver enable (EN / nSLEEP) on PB12 (low during init for safety).
 7. Debug serial on `Serial2` (USART2: PA2=TX, PA3=RX) at 115200 baud.
 8. Interactive CLI commands for each mode (velocity set, streaming toggle, zero reference, etc.).
+9. Streaming telemetry over `Serial2` as CSV (tgt,vel) for use with plotting tools like SerialPlot.
 
 ## Hardware Summary
 
@@ -265,9 +266,18 @@ z           capture current mechanical angle as zero reference
 ```
 
 Status line fields (streaming):
+
+- CSV header: tgt,vel (printed once when streaming starts)
+- CSV row: tgt,vel
+
+Example:
+
 ```
-tgt=<target> rad/s  vel=<measured>  angle=<mech_rad>  elA(rad)=<electrical_angle>
+10.000,9.872
+10.000,9.913
 ```
+
+Tip: I removed the bundled `foc_plot.py`; use SerialPlot (https://hackaday.io/project/166357-serialplot) or similar to visualize the `tgt` and `vel` columns in real time.
 
 ### PID & Filter Tuning
 Parameters (inside the closed-loop section in code):
