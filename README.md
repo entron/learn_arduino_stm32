@@ -137,6 +137,56 @@ platformio run --target upload
 platformio device monitor
 ```
 
+## Choosing environment and which .cpp to upload
+
+This project provides multiple PlatformIO environments (see `platformio.ini`). Each environment can limit which source files in `src/` are compiled using `build_src_filter`. Use the environment to choose which sketch (.cpp) you want to build/upload.
+
+Quick CLI examples:
+
+```bash
+# Build only the HC-SR04 example env
+pio run -e bluepill_hcsr04
+
+# Upload the HC-SR04 example to the Blue Pill (ST-Link)
+pio run -e bluepill_hcsr04 -t upload
+
+# Open the serial monitor for that env (uses env monitor_speed)
+pio device monitor -e bluepill_hcsr04
+
+# Build the normal main app env
+pio run -e bluepill_f103c8
+# Upload it
+pio run -e bluepill_f103c8 -t upload
+```
+
+VS Code / PlatformIO GUI:
+- Open PlatformIO (left sidebar) → Project Tasks → pick the environment (e.g. `bluepill_hcsr04` or `bluepill_f103c8`) → Run Build / Upload / Monitor.
+
+How the .cpp is chosen:
+- Each env uses `build_src_filter` to whitelist files in `src/`. Example lines in `platformio.ini`:
+
+```
+[env:bluepill_hcsr04]
+build_src_filter = +<hcsr04_example.cpp>
+
+[env:bluepill_f103c8]
+build_src_filter = +<main.cpp>
+```
+
+Only files matching the filter are compiled for that environment. If your main application needs helper files, add them to the filter (for example: `build_src_filter = +<main.cpp> +<helpers.cpp>`).
+
+Alternatives:
+- Rename the sketch you want to `main.cpp` for the default env.
+- Move experiments into an `examples/` or `tests/` folder and reference them from `build_src_filter`.
+
+HC-SR04 notes (power and 5V‑tolerance)
+- Typical: power HC‑SR04 from 5V. Some newer modules also run at 3.3V; this project assumes 5V for generality.
+- On STM32F103 (Blue Pill), many GPIOs are 5V‑tolerant ("FT") when configured as digital inputs/AF inputs. You may connect ECHO (5V) directly to an FT pin used as a digital input (e.g., PA0–PA10, PB0–PB15 — verify in the datasheet for your exact device).
+- Not 5V‑tolerant / avoid for 5V signals: PC13–PC15, PA11/PA12 (USB D−/D+), NRST, VBAT, and any pin in analog (ADC) mode.
+- If you’re unsure whether the chosen pin is FT, add a simple divider (e.g., 5k/10k) or a level shifter on ECHO.
+- TRIG from MCU → sensor is 3.3V and works without level shifting.
+
+
 ## `platformio.ini` Notes
 
 Important entries:
