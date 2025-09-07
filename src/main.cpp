@@ -407,8 +407,8 @@ void setup(){
 
     // Velocity PID & LPF (initial guesses – tune live)
     motor.PID_velocity.P = 0.6f;   // proportional
-    motor.PID_velocity.I = 15.0f;  // integral
-    motor.PID_velocity.D = 0.0f;   // derivative (often not needed)
+    motor.PID_velocity.I = 5.0f;  // integral
+    motor.PID_velocity.D = 0.01f;   // derivative (often not needed)
     motor.PID_velocity.output_ramp = 1000.0f; // (rad/s^2 in voltage equivalent)
     motor.PID_velocity.limit = VOLTAGE_LIMIT; // clamp output (voltage request)
     motor.LPF_velocity.Tf = 0.05f; // low-pass filter time constant (s)

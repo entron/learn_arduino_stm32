@@ -290,6 +290,21 @@ Parameters (inside the closed-loop section in code):
 | `PID_velocity.limit` | = `VOLTAGE_LIMIT` | Safety clamp of controller output |
 | `LPF_velocity.Tf` | 0.02–0.08 s | Larger smooths noise, adds lag |
 
+#### PID & Velocity parameter reference
+
+Below is a concise reference table for the closed-loop velocity controller parameters and their recommended ranges.
+
+| Parameter           | What it controls        | Unit         | Typical Range | Extreme Limits | Notes                                       |
+| ------------------- | ----------------------- | ------------ | ------------- | -------------- | ------------------------------------------- |
+| **P**               | Proportional gain       | V/(rad/s)    | 0.2 → 0.8     | 0 → ~2        | Higher = faster, but oscillates if too high |
+| **I**               | Integral gain           | V/(rad/s·s)  | 1 → 15        | 0 → ~100      | Too high → windup, sluggish overshoot       |
+| **D**               | Derivative gain         | V·s/rad      | 0 → 0.01      | 0 → 1          | Avoid unless overshoot is persistent        |
+| **output_ramp**    | Voltage slope limit     | rad/s² equiv | 400 → 700     | 0 → 10000      | Lower = smoother, higher = snappier         |
+| **limit**           | Max PID output voltage  | V            | 6 → 9         | 0 → supply     | Clamp for safety                            |
+| **Tf**              | Velocity LPF time const | s            | 0.02 → 0.05   | 0 → 0.2        | Lower = faster but noisier                  |
+| **velocity_limit** | Max target speed        | rad/s        | 40 → 60       | 0 → ∞          | Set based on motor KV × V                   |
+
+
 Tuning procedure (quick):
 1. Start with moderate `P` (0.5). `I=10`, `D=0`.
 2. Increase `P` until you see slight overshoot / buzz, then back off ~20%.
