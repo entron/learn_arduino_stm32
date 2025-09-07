@@ -43,6 +43,9 @@ void setup() {
   Serial2.println("Wiring: VCC=5V, GND=GND, TRIG=PA4, ECHO=PA5 (FT pin)");
   Serial2.println("Note: On STM32F103, many pins are 5V-tolerant in digital input mode.");
   Serial2.println("If not using an FT pin or if unsure, add a divider on ECHO (e.g. 5k/10k).");
+  // SerialPlot-friendly output: a short header (comment) and then one numeric value per line (cm).
+  // On timeout we emit "nan" so SerialPlot ignores the sample.
+  Serial2.println("# distance_cm");
 }
 
 float measureDistanceCm() {
@@ -73,11 +76,10 @@ void loop() {
   lastMs = now;
 
   float d = measureDistanceCm();
+  // Emit a single numeric value per line for SerialPlot. Use "nan" on timeout.
   if (d < 0) {
-    Serial2.println("Timeout: no echo");
+    Serial2.println("nan");
   } else {
-    Serial2.print("Distance: ");
-    Serial2.print(d, 2);
-    Serial2.println(" cm");
+    Serial2.println(d, 2);
   }
 }

@@ -81,11 +81,20 @@ HC-SR04 example starting
 Wiring: VCC=5V, GND=GND, TRIG=PA4, ECHO=PA5 (FT pin)
 Note: On STM32F103, many pins are 5V-tolerant in digital input mode.
 If not using an FT pin or if unsure, add a divider on ECHO (e.g. 5k/10k).
-Distance: 67.91 cm
-Distance: 67.91 cm
-Distance: 67.93 cm
+# distance_cm
+67.91
+67.91
+67.93
 ...
 ```
+
+Notes for SerialPlot
+- The firmware now emits a single numeric value per line (distance in cm) which is ideal for SerialPlot.
+- A comment header line `# distance_cm` is printed once at startup; SerialPlot treats lines starting with `#` as comments.
+- On timeout (no echo), the firmware prints `nan` so SerialPlot will ignore the sample.
+- Serial settings: 115200 baud, 8N1. Use the `bluepill_hcsr04` environment when opening the monitor.
+
+Example: open SerialPlot, select the serial port and 115200 baud, then press play — the plot will update at ~10 Hz (100 ms sample interval).
 
 ## Configuration
 
