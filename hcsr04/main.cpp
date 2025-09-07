@@ -74,10 +74,10 @@ void loop() {
 
   float d = measureDistanceCm();
   if (d < 0) {
-  Serial2.println("Timeout: no echo");
+    Serial2.println("Timeout: no echo");
   } else {
-  Serial2.print("Distance: ");
-  Serial2.print(d, 2);
-  Serial2.println(" cm");
+    Serial2.print("Distance: ");
+    Serial2.print(d, 2);
+    Serial2.println(" cm");
   }
 }
