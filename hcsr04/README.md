@@ -4,6 +4,10 @@ Simple distance measurement using HC-SR04 ultrasonic sensor with STM32 Blue Pill
 
 ## Hardware Requirements
 
+![HC-SR04 setup](../images/hcsr04_setup.jpg)
+
+*Wiring photo: HC‑SR04 connected to Blue Pill (VCC=5V, GND=GND, TRIG=PA4, ECHO=PA5).* 
+
 | Component | Notes |
 |-----------|-------|
 | MCU | STM32 Blue Pill (F103C8) |
@@ -87,6 +91,12 @@ Notes for SerialPlot
 - Serial settings: 115200 baud, 8N1. Use the `bluepill_hcsr04` environment when opening the monitor.
 
 Example: open SerialPlot, select the serial port and 115200 baud, then press play — the plot will update at ~10 Hz (100 ms sample interval).
+
+
+![SerialPlot output](../images/hcsr04_serialplot.png)
+
+*SerialPlot showing distance (cm) vs time — the firmware prints one numeric value per line which SerialPlot plots.*
+
 
 ## Configuration
 
