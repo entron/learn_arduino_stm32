@@ -20,14 +20,6 @@ Simple distance measurement using HC-SR04 ultrasonic sensor with STM32 Blue Pill
 | TRIG | PA4 | Trigger output (3.3V is fine) |
 | ECHO | PA5 | Echo input (see 5V tolerance notes) |
 
-## Wiring Details
-
-| HC-SR04 Pin | Blue Pill Pin | Notes |
-|-------------|---------------|-------|
-| VCC | 5V | External 5V supply |
-| GND | GND | Common ground |
-| TRIG | PA4 | Trigger output (3.3V is fine) |
-| ECHO | PA5 | Echo input (see 5V tolerance notes) |
 
 ### Serial Debug
 | USB-TTL | Blue Pill |
