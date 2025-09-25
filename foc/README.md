@@ -33,6 +33,9 @@ Field-oriented control (FOC) firmware for BLDC motors using SimpleFOC library on
 
 ## Wiring Guide
 
+![FOC Setup Overview](../images/foc_setup.jpg)
+*Complete wiring setup showing STM32 Blue Pill, SimpleFOC Mini driver, BLDC motor, and encoder connections*
+
 ### Power Connections
 All grounds must be common between components.
 
@@ -68,6 +71,9 @@ Motor phases → OUT_A / OUT_B / OUT_C (order arbitrary; swap any two to invert 
 - **Current sensing** pins for torque control (requires hardware modifications)
 
 ### MT6701 Encoder (ABZ Mode) Wiring
+
+![Encoder Mounting](../images/foc_setup_encoder.jpg)
+*MT6701 encoder mounted at the bottom of the BLDC motor showing compact integration*
 
 | MT6701 | Blue Pill | Notes |
 |--------|-----------|-------|
