@@ -119,6 +119,31 @@ Adjust `VOLTAGE_LIMIT` upward gradually if the motor fails to start (watch heat)
 
 Rough conversion: rpm ≈ rad/s * 60 / (2π)
 
+### PWM Frequency Selection
+
+The driver PWM frequency affects motor performance, audible noise, and thermal behavior. Configure via `driver.pwm_frequency` in setup().
+
+| Parameter | Typical Range | Default | Notes |
+|-----------|---------------|---------|-------|
+| `pwm_frequency` | 8–50 kHz | 25 kHz | Higher = quieter but more switching losses |
+
+#### Frequency Trade-offs
+- **Audible noise**: < 20 kHz can be audible; ≥ 20 kHz is usually silent
+- **Switching losses**: Higher frequency → more MOSFET heating in driver
+- **PWM resolution**: Higher frequency → fewer timer ticks → coarser duty control
+- **Motor smoothness**: Higher frequency → smoother current, but diminishing returns
+
+#### Quick Calculation (STM32 Timer Resolution)
+PWM resolution ≈ timer_clock / pwm_frequency  
+Example: 72 MHz timer, 25 kHz → ~2880 ticks (11.5 bits resolution)  
+At 50 kHz → ~1440 ticks (10.5 bits), at 100 kHz → ~720 ticks (9.5 bits)
+
+#### Tuning Guidelines
+1. **Start at 20–30 kHz** for quiet operation with good resolution
+2. **Lower to 8–15 kHz** if driver/MOSFETs overheat (accept some audible noise)
+3. **Raise to 30–50 kHz** for very smooth low-speed operation (monitor temperatures)
+4. Always verify MOSFET specifications support your chosen frequency
+
 ### Serial Command Interface
 
 Open a monitor at 115200 baud on `Serial2` (PA2/PA3 wiring). Send:
