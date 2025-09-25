@@ -235,6 +235,57 @@ Status output every 2 seconds:
 Target angle: 1.571 rad (90.0 deg)
 ```
 
+### Angle Resolution Analysis
+
+Understanding the theoretical and practical angle resolution limits of the open-loop angle control system.
+
+#### System Resolution Limits
+
+| Resolution Type | Value | Notes |
+|-----------------|-------|-------|
+| **Software (float)** | ~0.000043° | 32-bit float precision limit |
+| **PWM Resolution** | ~0.125° electrical | Timer clock ÷ PWM frequency |
+| **Mechanical Resolution** | ~0.011° | PWM resolution ÷ pole pairs |
+| **Practical Target** | ≥0.1° | Easily achievable with margin |
+
+#### Detailed Calculations (11 Pole-Pair Motor)
+
+**PWM Resolution:**
+- STM32 Timer: 72 MHz ÷ 25 kHz = 2880 PWM steps
+- Electrical angle resolution: 360° ÷ 2880 = **0.125° electrical**
+- Mechanical resolution: 0.125° ÷ 11 pole pairs = **0.011° mechanical**
+
+**Pole Pair Effect:**
+- More pole pairs = finer mechanical resolution
+- 11 pole pairs: 0.011° mechanical steps
+- 7 pole pairs: 0.018° mechanical steps  
+- 14 pole pairs: 0.009° mechanical steps
+
+#### Practical Resolution Test
+
+Test fine angle resolution with these commands:
+```bash
+# Test 0.1° mechanical steps (well above system limit)
+d 0      # Start position
+d 0.1    # 0.1° step  
+d 0.2    # 0.2° step
+d 0.5    # 0.5° step
+
+# Test near-limit resolution (~0.01° steps)
+d 0
+d 0.01   # Very fine step (close to PWM limit)
+d 0.02   # Another fine step
+```
+
+#### Resolution Limiting Factors
+
+1. **Electronic limits**: PWM quantization (~0.011° for 11 pole pairs)
+2. **Motor characteristics**: Detent torque, cogging, magnetic saturation
+3. **Mechanical factors**: Bearing friction, backlash, load inertia
+4. **Voltage/current limits**: Insufficient torque for small position changes
+
+> **Conclusion**: The system can theoretically achieve ~0.011° resolution, making 0.1° positioning easily achievable with excellent margin.
+
 ## Build & Upload
 
 Prerequisites:
