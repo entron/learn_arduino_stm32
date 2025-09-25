@@ -1,12 +1,13 @@
 // Mode selection (set one of these to 1, others to 0)
 // 0: disabled
 // Exactly one should be 1 at a time.
-#define MODE_OPEN_LOOP 1            // original open-loop velocity demo (no encoder)
+#define MODE_OPEN_LOOP 0            // original open-loop velocity demo (no encoder)
+#define MODE_OPEN_LOOP_ANGLE 1      // open-loop angle control demo (no encoder)
 #define MODE_POLEPAIR_TEST 0        // automatic estimation of motor pole pairs using encoder
 #define MODE_ENCODER_TEST 0         // encoder wiring / basic angle+velocity view
 #define MODE_VELOCITY_CLOSED_LOOP 0 // NEW: closed-loop velocity control using encoder
 
-#if ( (MODE_POLEPAIR_TEST + MODE_ENCODER_TEST + MODE_OPEN_LOOP + MODE_VELOCITY_CLOSED_LOOP) != 1 )
+#if ( (MODE_POLEPAIR_TEST + MODE_ENCODER_TEST + MODE_OPEN_LOOP + MODE_OPEN_LOOP_ANGLE + MODE_VELOCITY_CLOSED_LOOP) != 1 )
 #error "Exactly one MODE_XXX macro must be set to 1"
 #endif
 
@@ -87,6 +88,117 @@ void loop(){
         float rpm = target_velocity * 60.0f / (2.0f * PI);
         Serial2.print(F("vel target(rad/s): ")); Serial2.print(target_velocity,2);
         Serial2.print(F("  est mech rpm ~")); Serial2.println(rpm,1);
+    }
+}
+
+#elif MODE_OPEN_LOOP_ANGLE
+// ============================= OPEN-LOOP ANGLE CONTROL =============================
+// Test open-loop angle positioning without encoder feedback
+// Useful for testing motor response and verifying electrical angle mapping
+
+// User configurable parameters
+static const uint8_t MOTOR_POLE_PAIRS = 11;
+static const float SUPPLY_VOLTAGE = 12.0f;
+static float target_angle = 0.0f; // electrical angle in radians
+static const float VOLTAGE_LIMIT = 3.0f; // lower voltage for position holding
+static const float VELOCITY_LIMIT = 2.0f; // rad/s - controls how fast angle transitions happen
+static const uint8_t PIN_EN = PB12;
+static const uint8_t PIN_PWM_A = PA8;
+static const uint8_t PIN_PWM_B = PA9;
+static const uint8_t PIN_PWM_C = PA10;
+
+BLDCMotor motor(MOTOR_POLE_PAIRS);
+BLDCDriver3PWM driver(PIN_PWM_A, PIN_PWM_B, PIN_PWM_C, PIN_EN);
+
+void handleSerialInput() {
+    if (!Serial2.available()) return;
+    char c = Serial2.peek();
+    if (c == 'a' || c == 'A') {
+        String line = Serial2.readStringUntil('\n');
+        int spaceIdx = line.indexOf(' ');
+        if (spaceIdx > 0) {
+            float val = line.substring(spaceIdx + 1).toFloat();
+            target_angle = val;
+            Serial2.print(F("[OK] target_angle = ")); Serial2.print(target_angle, 3); Serial2.println(F(" rad"));
+        } else {
+            Serial2.println(F("Usage: a <angle_rad>"));
+        }
+    } else if (c == 'd' || c == 'D') {
+        String line = Serial2.readStringUntil('\n');
+        int spaceIdx = line.indexOf(' ');
+        if (spaceIdx > 0) {
+            float val = line.substring(spaceIdx + 1).toFloat();
+            target_angle = val * PI / 180.0f; // convert degrees to radians
+            Serial2.print(F("[OK] target_angle = ")); Serial2.print(target_angle, 3); 
+            Serial2.print(F(" rad (")); Serial2.print(val, 1); Serial2.println(F(" deg)"));
+        } else {
+            Serial2.println(F("Usage: d <angle_deg>"));
+        }
+    } else if (c == 's' || c == 'S') {
+        String dummy = Serial2.readStringUntil('\n');
+        target_angle += PI / 6.0f; // step by 30 degrees
+        Serial2.print(F("[STEP] target_angle = ")); Serial2.print(target_angle, 3); 
+        Serial2.print(F(" rad (")); Serial2.print(target_angle * 180.0f / PI, 1); Serial2.println(F(" deg)"));
+    } else if (c == 'v' || c == 'V') {
+        String line = Serial2.readStringUntil('\n');
+        int spaceIdx = line.indexOf(' ');
+        if (spaceIdx > 0) {
+            float val = line.substring(spaceIdx + 1).toFloat();
+            if (val > 0 && val < 50.0f) {
+                motor.velocity_limit = val;
+                Serial2.print(F("[OK] velocity_limit = ")); Serial2.print(val, 3); Serial2.println(F(" rad/s"));
+            } else {
+                Serial2.println(F("[ERR] velocity limit out of range (0-50)"));
+            }
+        } else {
+            Serial2.println(F("Usage: v <rad_per_s>"));
+        }
+    } else {
+        String dummy = Serial2.readStringUntil('\n');
+    }
+}
+
+void setup(){
+    Serial2.begin(115200);
+    delay(400);
+    Serial2.println(F("SimpleFOC Open-loop Angle Control Demo"));
+    Serial2.println(F("Commands:"));
+    Serial2.println(F("  a <rad>     - set target angle in radians"));
+    Serial2.println(F("  d <deg>     - set target angle in degrees"));
+    Serial2.println(F("  s           - step by 30 degrees"));
+    Serial2.println(F("  v <rad/s>   - set velocity limit (transition speed)"));
+    Serial2.println(F("Examples: a 1.57  or  d 90  or  s  or  v 1.0"));
+    
+    pinMode(PIN_EN, OUTPUT); 
+    digitalWrite(PIN_EN, LOW);
+    
+    driver.voltage_power_supply = SUPPLY_VOLTAGE;
+    driver.voltage_limit = VOLTAGE_LIMIT;
+    driver.pwm_frequency = 25000;
+    driver.init();
+    
+    motor.linkDriver(&driver);
+    motor.voltage_limit = VOLTAGE_LIMIT;
+    motor.velocity_limit = VELOCITY_LIMIT;  // limit how fast angle changes happen
+    motor.foc_modulation = FOCModulationType::SinePWM;
+    motor.controller = MotionControlType::angle_openloop;
+    motor.init();
+    
+    digitalWrite(PIN_EN, HIGH);
+    Serial2.println(F("Ready! Send commands to control motor angle."));
+}
+
+unsigned long lastInfo = 0;
+void loop(){
+    handleSerialInput();
+    motor.move(target_angle);
+    
+    unsigned long now = millis();
+    if(now - lastInfo > 2000){
+        lastInfo = now;
+        float degrees = target_angle * 180.0f / PI;
+        Serial2.print(F("Target angle: ")); Serial2.print(target_angle, 3); Serial2.print(F(" rad ("));
+        Serial2.print(degrees, 1); Serial2.println(F(" deg)"));
     }
 }
 

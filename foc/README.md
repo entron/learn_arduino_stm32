@@ -5,9 +5,10 @@ Field-oriented control (FOC) firmware for BLDC motors using SimpleFOC library on
 ## Current Firmware Features
 
 1. Open‑loop (sensorless) velocity control using SimpleFOC `BLDCMotor` + `BLDCDriver3PWM`.
-2. Automatic motor pole pair estimation sweep (encoder required).
-3. Encoder wiring / signal integrity test streaming angle & velocity.
-4. Closed‑loop FOC velocity control (encoder based) with PID + LPF tuning interface.
+2. Open‑loop angle control for precise electrical angle positioning (sensorless).
+3. Automatic motor pole pair estimation sweep (encoder required).
+4. Encoder wiring / signal integrity test streaming angle & velocity.
+5. Closed‑loop FOC velocity control (encoder based) with PID + LPF tuning interface.
 5. 3‑phase PWM on TIM1 pins: PA8 / PA9 / PA10 (high‑frequency SinePWM).
 6. Driver enable (EN / nSLEEP) on PB12 (low during init for safety).
 7. Debug serial on `Serial2` (USART2: PA2=TX, PA3=RX) at 115200 baud.
@@ -85,6 +86,7 @@ Switch modes by editing the macros at the very top of `src/main.cpp` (exactly on
 
 ```c
 #define MODE_OPEN_LOOP 0            // sensorless open-loop velocity demo
+#define MODE_OPEN_LOOP_ANGLE 0      // sensorless open-loop angle control demo
 #define MODE_POLEPAIR_TEST 0        // automatic estimation of motor pole pairs using encoder
 #define MODE_ENCODER_TEST 0         // encoder wiring / angle+velocity streaming
 #define MODE_VELOCITY_CLOSED_LOOP 1 // closed-loop FOC velocity control (encoder)
@@ -94,6 +96,7 @@ Switch modes by editing the macros at the very top of `src/main.cpp` (exactly on
 | Mode | Purpose | Requires Encoder | Typical Use |
 |------|---------|------------------|-------------|
 | `MODE_OPEN_LOOP` | Simple sensorless spin & sanity test | No | Quick functional test |
+| `MODE_OPEN_LOOP_ANGLE` | Precise sensorless angle positioning | No | Testing electrical angle mapping |
 | `MODE_POLEPAIR_TEST` | Estimate mechanical pole pairs | Yes | When motor pole pairs unknown |
 | `MODE_ENCODER_TEST` | Validate wiring & CPR, observe angle/velocity | Yes | First bring-up of sensor |
 | `MODE_VELOCITY_CLOSED_LOOP` | Full FOC velocity loop (PID) | Yes | Actual application / performance |
@@ -156,6 +159,80 @@ v -15     # reverse direction
 You will see periodic status lines:
 ```
 vel target(rad/s): 10.00  est mech rpm ~95.5
+```
+
+## Open-Loop Angle Control Mode
+
+Precise electrical angle positioning without encoder feedback. Useful for testing motor response, verifying electrical angle mapping, and understanding pole pair configuration.
+
+### When to Use
+- Test motor electrical angle response
+- Verify pole pair configuration by observing mechanical positions
+- Debug SimpleFOC angle control before adding encoder feedback
+- Learn relationship between electrical and mechanical angles
+
+### Enabling the Mode
+Set only this macro to 1 in `src/main.cpp`:
+```c++
+#define MODE_OPEN_LOOP_ANGLE 1
+#define MODE_OPEN_LOOP 0
+#define MODE_POLEPAIR_TEST 0
+#define MODE_ENCODER_TEST 0
+#define MODE_VELOCITY_CLOSED_LOOP 0
+```
+
+### Key Parameters
+| Parameter | Purpose | Default | Notes |
+|-----------|---------|---------|-------|
+| `MOTOR_POLE_PAIRS` | Motor pole pairs (magnets/2) | 11 | Must match your motor |
+| `VOLTAGE_LIMIT` | Phase voltage limit | 3.0V | Lower for safer position holding |
+| `VELOCITY_LIMIT` | Transition speed between angles | 2.0 rad/s | Controls smoothness of movement |
+| `target_angle` | Current target electrical angle | 0.0 rad | Updated via serial commands |
+
+### Serial Commands (115200 baud)
+```
+a <radians>    # Set target angle in radians (e.g., a 1.57)
+d <degrees>    # Set target angle in degrees (e.g., d 90) 
+s              # Step by 30 degrees
+v <rad/s>      # Set velocity limit (transition speed, e.g., v 1.0)
+```
+
+### Example Usage
+```
+d 0       # Move to 0 degrees (electrical)
+d 90      # Move to 90 degrees (1/4 electrical revolution)
+d 180     # Move to 180 degrees (1/2 electrical revolution)
+s         # Step by 30 degrees from current position
+v 0.5     # Set slow transitions (0.5 rad/s)
+v 5.0     # Set faster transitions (5.0 rad/s)
+```
+
+### Understanding Electrical vs Mechanical Angles
+- **Electrical angle**: Controls the magnetic field direction (0-2π rad per electrical cycle)
+- **Mechanical angle**: Physical shaft rotation
+- **Relationship**: `mechanical_angle = electrical_angle / pole_pairs`
+
+For an 11 pole-pair motor:
+- 1 full electrical revolution (2π rad) = ~32.7° mechanical rotation
+- 11 electrical revolutions = 1 full mechanical revolution (360°)
+
+### Tuning Guidelines
+1. **Start slow**: Begin with `v 1.0` or lower for smooth, observable transitions
+2. **Increase voltage carefully**: If motor doesn't hold position, slightly increase `VOLTAGE_LIMIT`
+3. **Observe mechanical response**: Each electrical revolution should produce consistent mechanical movement
+4. **Test full range**: Try `d 0`, `d 90`, `d 180`, `d 270` to see quarter-step positions
+
+### Troubleshooting
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| Motor shakes violently | Velocity limit too high | Lower with `v 0.5` or `v 1.0` |
+| No movement | Voltage too low | Increase `VOLTAGE_LIMIT` slightly |
+| Inconsistent positions | Wrong pole pairs | Run pole pair detection mode |
+| Jerky transitions | No velocity limiting | Ensure `motor.velocity_limit` is set |
+
+Status output every 2 seconds:
+```
+Target angle: 1.571 rad (90.0 deg)
 ```
 
 ## Build & Upload
