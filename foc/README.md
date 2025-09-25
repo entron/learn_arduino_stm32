@@ -9,6 +9,7 @@ Field-oriented control (FOC) firmware for BLDC motors using SimpleFOC library on
 3. Automatic motor pole pair estimation sweep (encoder required).
 4. Encoder wiring / signal integrity test streaming angle & velocity.
 5. Closed‑loop FOC velocity control (encoder based) with PID + LPF tuning interface.
+6. Closed‑loop FOC angle control (encoder based) with cascaded PID architecture.
 5. 3‑phase PWM on TIM1 pins: PA8 / PA9 / PA10 (high‑frequency SinePWM).
 6. Driver enable (EN / nSLEEP) on PB12 (low during init for safety).
 7. Debug serial on `Serial2` (USART2: PA2=TX, PA3=RX) at 115200 baud.
@@ -89,7 +90,8 @@ Switch modes by editing the macros at the very top of `src/main.cpp` (exactly on
 #define MODE_OPEN_LOOP_ANGLE 0      // sensorless open-loop angle control demo
 #define MODE_POLEPAIR_TEST 0        // automatic estimation of motor pole pairs using encoder
 #define MODE_ENCODER_TEST 0         // encoder wiring / angle+velocity streaming
-#define MODE_VELOCITY_CLOSED_LOOP 1 // closed-loop FOC velocity control (encoder)
+#define MODE_VELOCITY_CLOSED_LOOP 0 // closed-loop FOC velocity control (encoder)
+#define MODE_ANGLE_CLOSED_LOOP 1    // closed-loop FOC angle control (encoder)
 ```
 
 ### Summary of Modes
@@ -100,6 +102,7 @@ Switch modes by editing the macros at the very top of `src/main.cpp` (exactly on
 | `MODE_POLEPAIR_TEST` | Estimate mechanical pole pairs | Yes | When motor pole pairs unknown |
 | `MODE_ENCODER_TEST` | Validate wiring & CPR, observe angle/velocity | Yes | First bring-up of sensor |
 | `MODE_VELOCITY_CLOSED_LOOP` | Full FOC velocity loop (PID) | Yes | Actual application / performance |
+| `MODE_ANGLE_CLOSED_LOOP` | Full FOC angle/position control (cascaded PID) | Yes | Precision positioning applications |
 
 > After determining pole pairs and confirming encoder CPR/direction, use the closed‑loop mode for best torque, low‑speed smoothness, and efficiency.
 
@@ -494,6 +497,186 @@ If the motor spins the wrong direction compared to command, you can:
 
 ### Logging Improvements (Optional Ideas)
 You can add a higher‑rate binary or CSV stream or simple min/max tracking inside the 5 Hz telemetry block. For deeper analysis, temporarily raise streaming frequency and capture with a logic/USB serial tool.
+
+## Closed-Loop Angle Control FOC Mode
+
+Precision position control using cascaded PID architecture: angle controller → velocity controller → voltage/current controller. Enabled when `MODE_ANGLE_CLOSED_LOOP` = 1.
+
+### System Architecture
+- **Outer loop**: Angle PID converts position error to velocity command
+- **Inner loop**: Velocity PID converts velocity error to voltage command  
+- **FOC layer**: Converts voltage command to optimal phase currents
+
+This cascaded approach provides smooth motion profiles with velocity limiting and excellent disturbance rejection.
+
+### When to Use
+- Precision positioning applications (robotics, automation)
+- Multi-point positioning sequences  
+- Smooth point-to-point motion with automatic velocity profiling
+- Applications requiring both position accuracy and speed control
+
+### Enabling the Mode
+Set only this macro to 1 in `src/main.cpp`:
+```c++
+#define MODE_ANGLE_CLOSED_LOOP 1
+#define MODE_OPEN_LOOP 0
+#define MODE_OPEN_LOOP_ANGLE 0
+#define MODE_POLEPAIR_TEST 0
+#define MODE_ENCODER_TEST 0
+#define MODE_VELOCITY_CLOSED_LOOP 0
+```
+
+### Key Parameters
+| Constant | Meaning | Default | Notes |
+|----------|---------|---------|-------|
+| `MOTOR_POLE_PAIRS` | Mechanical pole pairs (magnets/2) | 11 | Must match your motor |
+| `ENCODER_CPR` | Quadrature counts per mechanical revolution | 1024 | Set to your encoder configuration |
+| `SUPPLY_VOLTAGE` | Driver supply voltage | 12.0V | For voltage mapping |
+| `VOLTAGE_LIMIT` | Max phase voltage | 6.0V | Limits current/heating |
+| `VELOCITY_LIMIT` | Max velocity during angle moves | 8.0 rad/s | Controls transition speed |
+| `ANGLE_STEP` | Default step size for 's' command | 0.1745 rad (10°) | Configurable |
+
+### CLI Commands (Serial2 115200)
+```
+a <rad>     set target angle in radians (e.g., a 1.57)
+d <deg>     set target angle in degrees (e.g., d 90)
+s           step by configured angle increment (default: 10°)
+z           zero position (capture current angle as reference)
+p           single-shot status (CSV: tgt,pos,vel)
+r           toggle 5Hz continuous telemetry streaming
+```
+
+### Example Command Sequence
+```
+z           # Zero current position
+d 90        # Move to 90 degrees
+d 180       # Move to 180 degrees  
+d 0         # Return to zero
+s           # Step 10 degrees
+s           # Step another 10 degrees (now at 20°)
+a 3.14159   # Move to π radians (180°)
+```
+
+### Telemetry Output
+**CSV Format**: `tgt,pos,vel`
+- `tgt`: Target angle (radians)
+- `pos`: Current mechanical position (radians) 
+- `vel`: Current velocity (rad/s)
+
+**Example streaming output**:
+```
+tgt,pos,vel
+1.5708,0.0234,-0.0123
+1.5708,0.1245,2.4563
+1.5708,0.8934,3.2145
+1.5708,1.4567,1.8934
+1.5708,1.5698,0.0234
+1.5708,1.5708,0.0000
+```
+
+### PID Tuning Parameters
+
+#### Angle Controller (Outer Loop)
+| Parameter | Purpose | Default | Range | Notes |
+|-----------|---------|---------|-------|-------|
+| `P_angle.P` | Position error response | 20.0 | 5-50 | Higher = faster approach, risk of overshoot |
+| `P_angle.I` | Steady-state error correction | 0.0 | 0-5 | Usually not needed for angle control |
+| `P_angle.D` | Overshoot damping | 0.1 | 0-1 | Helps prevent oscillation |
+| `P_angle.limit` | Max velocity command | 8.0 rad/s | 1-20 | Must match `VELOCITY_LIMIT` |
+
+#### Velocity Controller (Inner Loop)  
+| Parameter | Purpose | Default | Range | Notes |
+|-----------|---------|---------|-------|-------|
+| `PID_velocity.P` | Velocity error response | 0.3 | 0.1-1.0 | Lower than pure velocity mode |
+| `PID_velocity.I` | Velocity steady-state correction | 3.0 | 1-10 | Lower than pure velocity mode |
+| `PID_velocity.D` | Velocity damping | 0.0 | 0-0.1 | Usually not needed |
+| `PID_velocity.limit` | Max voltage command | 6.0V | 3-12V | Safety voltage limit |
+
+#### Low-Pass Filters
+| Parameter | Purpose | Default | Range | Notes |
+|-----------|---------|---------|-------|-------|
+| `LPF_velocity.Tf` | Velocity measurement smoothing | 0.01s | 0-0.1s | Lower = more responsive |
+| `LPF_angle.Tf` | Angle measurement smoothing | 0.0s | 0-0.05s | Usually not needed |
+
+### Tuning Procedure
+
+#### 1. Start with Conservative Values
+Use the defaults as starting points - they're designed to be stable but may not be optimal for your specific motor/load combination.
+
+#### 2. Tune Velocity Loop First
+1. Set angle P gain very low (e.g., 5.0)
+2. Send step commands and observe velocity response
+3. Tune velocity PID as in velocity-only mode
+4. Look for smooth acceleration/deceleration curves
+
+#### 3. Tune Angle Loop
+1. Gradually increase angle P gain until response is snappy
+2. Add angle D gain if overshoot occurs
+3. Test with various step sizes (small and large)
+4. Verify smooth motion profiles in telemetry
+
+#### 4. Optimize for Your Application
+- **Precision positioning**: Higher angle P, moderate velocity limits
+- **Fast point-to-point**: Higher velocity limits, moderate angle P  
+- **Smooth motion**: Add velocity filtering, moderate gains throughout
+- **Heavy loads**: Increase integral gains, lower derivative gains
+
+### Motion Profile Behavior
+
+The cascaded controller automatically generates smooth motion profiles:
+
+1. **Acceleration phase**: Angle error large → high velocity command → motor accelerates
+2. **Constant velocity phase**: Velocity reaches limit → motor maintains max speed  
+3. **Deceleration phase**: Approaching target → velocity command decreases → smooth deceleration
+4. **Settling phase**: Fine position corrections at low velocity
+
+**Velocity Profile Example** (90° step):
+```
+Time  | Target | Position | Velocity
+------|--------|----------|----------
+0.0s  | 90°    | 0°       | 0 rad/s
+0.1s  | 90°    | 15°      | 4.2 rad/s  ← accelerating
+0.2s  | 90°    | 45°      | 8.0 rad/s  ← max velocity
+0.3s  | 90°    | 75°      | 8.0 rad/s  ← constant speed
+0.4s  | 90°    | 88°      | 2.1 rad/s  ← decelerating  
+0.5s  | 90°    | 90°      | 0 rad/s    ← settled
+```
+
+### Common Tuning Issues
+
+| Issue | Symptoms | Likely Cause | Fix |
+|-------|----------|--------------|-----|
+| **Oscillation around target** | Position wobbles ±few degrees | Angle P too high | Reduce `P_angle.P` by 20-30% |
+| **Overshoot** | Overshoots target, returns slowly | Insufficient damping | Increase `P_angle.D` to 0.2-0.5 |
+| **Slow approach** | Takes too long to reach target | Angle P too low | Increase `P_angle.P` gradually |
+| **Velocity overshoot** | Jerky motion, velocity spikes | Velocity loop unstable | Reduce velocity PID gains |
+| **Never quite reaches target** | Stops short by small amount | Friction/static load | Add small `P_angle.I` (0.1-1.0) |
+| **Noisy velocity readings** | Erratic velocity in telemetry | Encoder noise | Increase `LPF_velocity.Tf` to 0.02-0.05 |
+
+### Advanced Applications
+
+#### Multi-Point Sequences
+```c++
+// Example: Square pattern (requires code modification)
+float targets[] = {0, PI/2, PI, 3*PI/2, 0};  // 0°, 90°, 180°, 270°, 0°
+// Send each target with delays for settling
+```
+
+#### Dynamic Velocity Limits
+Modify `motor.velocity_limit` in real-time for adaptive motion profiles:
+- Fast moves for large steps
+- Slow, precise moves for small adjustments
+
+#### Position-Dependent Gains
+Adjust PID gains based on position for optimal performance across the full range of motion.
+
+### Integration with External Controllers
+
+The CSV telemetry format (`tgt,pos,vel`) is compatible with:
+- **SerialPlot**: Real-time visualization of motion profiles
+- **Python/MATLAB**: Data logging and analysis
+- **LabVIEW**: Integration with larger control systems
+- **Custom applications**: Simple comma-separated parsing
 
 ---
 

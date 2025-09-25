@@ -2,12 +2,13 @@
 // 0: disabled
 // Exactly one should be 1 at a time.
 #define MODE_OPEN_LOOP 0            // original open-loop velocity demo (no encoder)
-#define MODE_OPEN_LOOP_ANGLE 1      // open-loop angle control demo (no encoder)
+#define MODE_OPEN_LOOP_ANGLE 0      // open-loop angle control demo (no encoder)
 #define MODE_POLEPAIR_TEST 0        // automatic estimation of motor pole pairs using encoder
 #define MODE_ENCODER_TEST 0         // encoder wiring / basic angle+velocity view
-#define MODE_VELOCITY_CLOSED_LOOP 0 // NEW: closed-loop velocity control using encoder
+#define MODE_VELOCITY_CLOSED_LOOP 0 // closed-loop velocity control using encoder
+#define MODE_ANGLE_CLOSED_LOOP 1    // NEW: closed-loop angle control using encoder
 
-#if ( (MODE_POLEPAIR_TEST + MODE_ENCODER_TEST + MODE_OPEN_LOOP + MODE_OPEN_LOOP_ANGLE + MODE_VELOCITY_CLOSED_LOOP) != 1 )
+#if ( (MODE_POLEPAIR_TEST + MODE_ENCODER_TEST + MODE_OPEN_LOOP + MODE_OPEN_LOOP_ANGLE + MODE_VELOCITY_CLOSED_LOOP + MODE_ANGLE_CLOSED_LOOP) != 1 )
 #error "Exactly one MODE_XXX macro must be set to 1"
 #endif
 
@@ -561,6 +562,190 @@ void loop(){
             }
             // CSV: tgt,vel
             Serial2.print(target_velocity, 3); Serial2.print(',');
+            Serial2.println(vel, 3);
+        }
+    }
+}
+
+#elif MODE_ANGLE_CLOSED_LOOP
+// ============================= CLOSED-LOOP ANGLE CONTROL (FOC) =============================
+// Requirements: Set correct MOTOR_POLE_PAIRS and ENCODER_CPR. Encoder wired (A=PA0,B=PA1).
+// Commands over Serial2 (115200):
+//   a <rad>         set target angle in radians (example: a 1.57)
+//   d <deg>         set target angle in degrees (example: d 90)
+//   s               step by configurable angle increment
+//   z               zero (software) mechanical angle reference
+//   p               single status print
+//   r               toggle continuous 5Hz telemetry
+// PID tuning for angle control (outer loop) and velocity (inner loop)
+
+static const uint8_t MOTOR_POLE_PAIRS = 11;      // <<< set to detected/known pole pairs
+static const uint32_t ENCODER_CPR = 1024;       // <<< set to your encoder CPR (quadrature counts)
+static const float SUPPLY_VOLTAGE = 12.0f;
+static const float VOLTAGE_LIMIT = 6.0f;        // limit phase voltage (adjust for current / heating)
+static const float VELOCITY_LIMIT = 8.0f;      // max velocity during angle moves (rad/s)
+static const float ANGLE_STEP = 0.1745329f;     // step size in radians (10 degrees)
+
+// Pins (same convention as other modes)
+static const uint8_t PIN_EN = PB12;
+static const uint8_t PIN_PWM_A = PA8;
+static const uint8_t PIN_PWM_B = PA9;
+static const uint8_t PIN_PWM_C = PA10;
+static const uint8_t PIN_ENC_A = PA0;
+static const uint8_t PIN_ENC_B = PA1;
+
+BLDCMotor motor(MOTOR_POLE_PAIRS);
+BLDCDriver3PWM driver(PIN_PWM_A, PIN_PWM_B, PIN_PWM_C, PIN_EN);
+Encoder encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_CPR);
+void encA(){ encoder.handleA(); }
+void encB(){ encoder.handleB(); }
+
+static float target_angle = 0.0f;   // rad (mechanical angle)
+static float zeroAngle = 0.0f;      // software zero reference
+static bool stream = true;          // periodic telemetry
+unsigned long lastStream = 0;
+static bool csvHeaderPending = true; // print CSV header when streaming starts
+
+void cliHandle(){
+    if(!Serial2.available()) return;
+    char c = Serial2.peek();
+    if(c=='a' || c=='A'){
+        String line = Serial2.readStringUntil('\n');
+        int sp = line.indexOf(' ');
+        if(sp>0){
+            float val = line.substring(sp+1).toFloat();
+            target_angle = val;
+            Serial2.print(F("[OK] target_angle=")); Serial2.print(target_angle,4); Serial2.println(F(" rad"));
+        } else Serial2.println(F("Usage: a <rad>"));
+    } else if(c=='d' || c=='D'){
+        String line = Serial2.readStringUntil('\n');
+        int sp = line.indexOf(' ');
+        if(sp>0){
+            float val = line.substring(sp+1).toFloat();
+            target_angle = val * PI / 180.0f;
+            Serial2.print(F("[OK] target_angle=")); Serial2.print(target_angle,4); 
+            Serial2.print(F(" rad (")); Serial2.print(val,2); Serial2.println(F(" deg)"));
+        } else Serial2.println(F("Usage: d <deg>"));
+    } else {
+        char cmd = Serial2.read(); // consume single char commands
+        switch(cmd){
+            case 's': case 'S': 
+                target_angle += ANGLE_STEP; 
+                Serial2.print(F("[STEP] target_angle=")); Serial2.print(target_angle,4);
+                Serial2.print(F(" rad (")); Serial2.print(target_angle * 180.0f / PI,2); Serial2.println(F(" deg)"));
+                break;
+            case 'p': case 'P': {
+                // Single CSV sample (tgt,pos,vel)
+                float pos = motor.sensor_direction * (encoder.getAngle() - zeroAngle);
+                float vel = motor.sensor_direction * encoder.getVelocity();
+                Serial2.print(target_angle, 4); Serial2.print(',');
+                Serial2.print(pos, 4); Serial2.print(',');
+                Serial2.println(vel, 3);
+            } break;
+            case 'r': case 'R':
+                stream = !stream;
+                if(stream) csvHeaderPending = true; // re-print header when streaming resumes
+                Serial2.print(F("[Stream]=")); Serial2.println(stream?"ON":"OFF");
+                break;
+            case 'z': case 'Z': 
+                zeroAngle = encoder.getAngle(); 
+                target_angle = 0.0f; // reset target to new zero
+                Serial2.println(F("[Zero] captured, target reset to 0")); 
+                break;
+            default: /* ignore */ break;
+        }
+    }
+}
+
+void setup(){
+    Serial2.begin(115200);
+    delay(300);
+    Serial2.println(F("Closed-loop Angle FOC Demo"));
+    Serial2.println(F("Commands: a <rad>, d <deg>, s, z, p, r"));
+    pinMode(PIN_EN, OUTPUT); digitalWrite(PIN_EN, LOW);
+
+    // Driver config
+    driver.voltage_power_supply = SUPPLY_VOLTAGE;
+    driver.voltage_limit = VOLTAGE_LIMIT;
+    driver.pwm_frequency = 25000; // 25kHz
+    driver.init();
+
+    // Encoder config
+    encoder.quadrature = Quadrature::ON;
+    encoder.pullup = Pullup::USE_EXTERN; // push-pull outputs assumed
+    encoder.init();
+    encoder.enableInterrupts(encA, encB);
+    delay(50);
+
+    // Link sensor & driver
+    motor.linkSensor(&encoder);
+    motor.linkDriver(&driver);
+
+    // Motion controller & limits
+    motor.controller = MotionControlType::angle;
+    motor.voltage_limit = VOLTAGE_LIMIT; // ensures safety
+    motor.velocity_limit = VELOCITY_LIMIT; // max speed during angle moves
+    motor.foc_modulation = FOCModulationType::SinePWM;
+
+    // Angle PID (outer loop) - typically needs lower gains than velocity
+    motor.P_angle.P = 20.0f;        // proportional - how aggressively it corrects angle error
+    motor.P_angle.I = 0.0f;         // integral - usually not needed for angle control
+    motor.P_angle.D = 0.1f;         // derivative - helps with overshoot
+    motor.P_angle.output_ramp = 10000.0f; // output change rate limit
+    motor.P_angle.limit = VELOCITY_LIMIT; // max velocity command from angle controller
+
+    // Velocity PID (inner loop) - same as velocity mode but typically with lower gains
+    motor.PID_velocity.P = 0.3f;    // lower than pure velocity mode
+    motor.PID_velocity.I = 3.0f;    // lower integral gain
+    motor.PID_velocity.D = 0.0f;    // derivative usually not needed
+    motor.PID_velocity.output_ramp = 1000.0f;
+    motor.PID_velocity.limit = VOLTAGE_LIMIT; // voltage limit
+    motor.LPF_velocity.Tf = 0.01f;  // velocity filter
+
+    // LPF for angle measurement (optional)
+    motor.LPF_angle.Tf = 0.0f;      // 0 = no filtering, try 0.01-0.05 if noisy
+
+    // Align & init FOC
+    motor.init();
+    motor.initFOC();
+
+    digitalWrite(PIN_EN, HIGH); // enable gate driver
+
+    Serial2.println(F("FOC angle control init complete."));
+    Serial2.print(F("Zero electrical angle offset: "));
+    Serial2.println(motor.zero_electric_angle,4);
+    Serial2.print(F("Direction: "));
+    Serial2.println(motor.sensor_direction == Direction::CW ? F("CW") : F("CCW"));
+    Serial2.print(F("Angle step size: ")); Serial2.print(ANGLE_STEP * 180.0f / PI,1); Serial2.println(F(" deg"));
+    
+    // Capture initial zero position
+    zeroAngle = encoder.getAngle();
+    Serial2.println(F("Initial zero position captured."));
+    
+    // CSV header for streaming output (tgt,pos,vel)
+    Serial2.println(F("tgt,pos,vel"));
+    csvHeaderPending = false;
+}
+
+void loop(){
+    cliHandle();
+    // Core FOC tasks
+    motor.loopFOC();               // update FOC & read sensor
+    motor.move(target_angle);      // run angle control loop (cascaded angle->velocity->voltage)
+
+    if(stream){
+        unsigned long now = millis();
+        if(now - lastStream > 200){ // 5Hz
+            lastStream = now;
+            float pos = motor.sensor_direction * (encoder.getAngle() - zeroAngle);  // current mechanical angle
+            float vel = motor.sensor_direction * encoder.getVelocity();  // current velocity
+            if(csvHeaderPending){
+                Serial2.println(F("tgt,pos,vel"));
+                csvHeaderPending = false;
+            }
+            // CSV: tgt,pos,vel
+            Serial2.print(target_angle, 4); Serial2.print(',');
+            Serial2.print(pos, 4); Serial2.print(',');
             Serial2.println(vel, 3);
         }
     }
