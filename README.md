@@ -35,13 +35,13 @@ Ultrasonic distance measurement with proper 5V tolerance handling for STM32F103.
 ### Build and Upload FOC Project
 ```bash
 # Build FOC firmware
-pio run -e bluepill_f103c8
+pio run -e bluepill_foc
 
 # Upload to Blue Pill via ST-Link
-pio run -e bluepill_f103c8 -t upload
+pio run -e bluepill_foc -t upload
 
 # Monitor serial output
-pio device monitor -e bluepill_f103c8
+pio device monitor -e bluepill_foc
 ```
 
 ### Build and Upload HC-SR04 Project  
@@ -64,7 +64,7 @@ pio device monitor -e bluepill_hcsr04
 - **Programming:** ST-Link via SWD (SWDIO, SWCLK, GND, 3.3V)
 
 ### PlatformIO Environments
-- `bluepill_f103c8`: FOC motor control firmware
+- `bluepill_foc`: FOC motor control firmware
 - `bluepill_hcsr04`: HC-SR04 distance sensor firmware
 
 Each environment compiles only the relevant source files and includes project-specific dependencies.

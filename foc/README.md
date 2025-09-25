@@ -27,7 +27,7 @@ Field-oriented control (FOC) firmware for BLDC motors using SimpleFOC library on
 | Serial Debug Adapter     | USB‑TTL (3.3V) on PA2/PA3 |
 | Optional Encoder         | MT6701 (ABZ incremental mode) |
 
-> If your physical MCU is the smaller C6 (32KB flash), the full SimpleFOC library may not fit. The project is set to `bluepill_f103c8` for extra flash headroom.
+> If your physical MCU is the smaller C6 (32KB flash), the full SimpleFOC library may not fit. The project is set to `bluepill_foc` for extra flash headroom.
 
 ## Wiring Guide
 
