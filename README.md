@@ -1,87 +1,85 @@
-# STM32 Blue Pill Projects
+# Learn Arduino Libraries on STM32 Blue Pill
 
-Arduino/PlatformIO projects for STM32 Blue Pill with two main applications:
+Learning repository for testing Arduino libraries on STM32 microcontrollers using PlatformIO. The STM32 Blue Pill serves as an affordable development platform to explore Arduino ecosystem compatibility with ARM Cortex-M processors.
 
-## Projects
+This repo contains practical examples demonstrating how popular Arduino libraries work on STM32 hardware:
 
-### 1. FOC Motor Control (`foc/`)
-BLDC motor control using SimpleFOC library with multiple operation modes:
+## Learning Projects
+
+### 1. SimpleFOC Library Test (`foc/`)
+**Arduino Library:** [SimpleFOC](https://simplefoc.com/) - Advanced motor control library
+**Learning Goals:** Test Arduino-based FOC library on STM32, explore real-time control loops
+**Features Tested:**
 - Open-loop sensorless control
-- Encoder testing and pole pair detection  
+- Encoder integration and pole pair detection  
 - Closed-loop FOC velocity control with PID tuning
+- Arduino IDE compatibility vs native STM32 HAL performance
 
 **Hardware:** STM32 Blue Pill + SimpleFOC Mini driver + BLDC motor + optional MT6701 encoder
 
-### 2. HC-SR04 Distance Sensor (`hcsr04/`)
-Ultrasonic distance measurement with proper 5V tolerance handling for STM32F103.
+### 2. NewPing/HC-SR04 Library Test (`hcsr04/`)
+**Arduino Library:** HC-SR04 ultrasonic sensor libraries
+**Learning Goals:** Test sensor libraries on STM32, handle 5V/3.3V level conversion
+**Features Tested:**
+- Arduino-style sensor interfacing on STM32
+- Timing-critical operations compatibility
+- 5V tolerance and signal conditioning
 
 **Hardware:** STM32 Blue Pill + HC-SR04 sensor + 5V power supply
 
-## Project Structure
+## Repository Structure
 
 ```
-├── foc/                    # FOC motor control project
-│   ├── main.cpp           # FOC firmware with multiple modes
-│   └── README.md          # FOC-specific documentation
-├── hcsr04/                # HC-SR04 distance sensor project  
-│   ├── main.cpp           # Distance sensor firmware
-│   └── README.md          # HC-SR04-specific documentation
-├── platformio.ini         # Build environments for both projects
-└── README.md              # This file
+├── foc/                    # SimpleFOC Arduino library test
+│   ├── main.cpp           # FOC library implementation examples
+│   └── README.md          # Setup guide and learning notes
+├── hcsr04/                # HC-SR04 sensor Arduino library test
+│   ├── main.cpp           # Sensor library compatibility test
+│   └── README.md          # Wiring guide and 5V handling notes
+├── images/                # Setup photos and scope captures
+├── platformio.ini         # Multi-environment build config
+└── README.md              # This learning guide
 ```
 
-## Quick Start
+## Getting Started
 
-### Build and Upload FOC Project
+### Prerequisites
+- **PlatformIO** (CLI or VS Code extension)
+- **STM32 Blue Pill** (STM32F103C8T6 recommended)
+- **ST-Link V2** programmer (or compatible)
+- Basic understanding of Arduino framework
+
+### Test SimpleFOC Library
 ```bash
-# Build FOC firmware
+# Build SimpleFOC test firmware
 pio run -e bluepill_foc
 
 # Upload to Blue Pill via ST-Link
 pio run -e bluepill_foc -t upload
 
-# Monitor serial output
+# Monitor Arduino-style Serial output
 pio device monitor -e bluepill_foc
 ```
 
-### Build and Upload HC-SR04 Project  
+### Test HC-SR04 Sensor Libraries
 ```bash
-# Build HC-SR04 firmware
+# Build sensor library test firmware
 pio run -e bluepill_hcsr04
 
 # Upload to Blue Pill via ST-Link
 pio run -e bluepill_hcsr04 -t upload
 
-# Monitor serial output
+# Monitor sensor readings
 pio device monitor -e bluepill_hcsr04
 ```
 
-## Common Hardware Setup
+## Learning Resources
 
-### Blue Pill Connections
-- **Serial Debug:** PA2 (TX2), PA3 (RX2) at 115200 baud
-- **Power:** 3.3V logic, GND common
-- **Programming:** ST-Link via SWD (SWDIO, SWCLK, GND, 3.3V)
+Each project folder contains detailed learning documentation:
+- `foc/README.md` - SimpleFOC library integration, performance analysis, Arduino vs STM32 HAL comparison
+- `hcsr04/README.md` - Sensor library compatibility, timing analysis, 5V tolerance handling
 
-### PlatformIO Environments
-- `bluepill_foc`: FOC motor control firmware
-- `bluepill_hcsr04`: HC-SR04 distance sensor firmware
-
-Each environment compiles only the relevant source files and includes project-specific dependencies.
-
-## Documentation
-
-See the README.md file in each project folder for detailed setup, wiring, and usage instructions:
-- `foc/README.md` - Complete FOC setup and tuning guide
-- `hcsr04/README.md` - HC-SR04 wiring and 5V tolerance notes
-
-## Requirements
-
-- **PlatformIO** (CLI or IDE)
-- **ST-Link** programmer
-- **STM32 Blue Pill** (F103C8 recommended for flash size)
-- Project-specific hardware (see individual README files)
 
 ## License
 
-Educational / personal use. Adjust as needed.
+Educational and learning purposes. Feel free to experiment, modify, and share your findings!
