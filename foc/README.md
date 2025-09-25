@@ -110,7 +110,7 @@ Open-loop (no sensor) approximates rotation and may:
 Key parameters in `src/main.cpp`:
 | Parameter | Purpose | Default |
 |-----------|---------|---------|
-| `MOTOR_POLE_PAIRS` | Set to your motor's pole pairs (magnets/2) | 7 |
+| `MOTOR_POLE_PAIRS` | Set to your motor's pole pairs (magnets/2) | 11 |
 | `SUPPLY_VOLTAGE` | Motor supply (for voltage mapping) | 12.0 |
 | `VOLTAGE_LIMIT` | Limits applied phase voltage | 4.0 |
 | `target_velocity` | Initial open-loop speed (rad/s) | 10.0 |
@@ -244,7 +244,7 @@ Use the rounded integer as your `MOTOR_POLE_PAIRS` value elsewhere in the projec
 2. Switch back to open‑loop or encoder test mode by toggling macros.
 3. Set `MOTOR_POLE_PAIRS` (open‑loop) or use it when configuring closed‑loop FOC.
 
-> Tip: Keep a note of the final pole pair count in this README (e.g. "My motor: 7 pole pairs").
+> Tip: Keep a note of the final pole pair count in this README (e.g. "My motor: 11 pole pairs").
 
 ## Encoder Test Mode (MT6701 ABZ)
 
@@ -289,7 +289,7 @@ Enabled when `MODE_VELOCITY_CLOSED_LOOP` = 1. Provides field‑oriented control 
 
 | Constant | Meaning | Example |
 |----------|---------|---------|
-| `MOTOR_POLE_PAIRS` | Mechanical pole pairs (magnets/2) | 7 |
+| `MOTOR_POLE_PAIRS` | Mechanical pole pairs (magnets/2) | 11 |
 | `ENCODER_CPR` | Quadrature counts per mechanical revolution | 8192 |
 | `SUPPLY_VOLTAGE` | Driver supply (for voltage mapping) | 12.0 V |
 | `VOLTAGE_LIMIT` | Max q‑axis voltage demand (limits current/heat) | 6.0 V |
