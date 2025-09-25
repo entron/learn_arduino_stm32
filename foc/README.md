@@ -112,7 +112,10 @@ Switch modes by editing the macros at the very top of `src/main.cpp` (exactly on
 
 > After determining pole pairs and confirming encoder CPR/direction, use the closed‑loop mode for best torque, low‑speed smoothness, and efficiency.
 
-## Open-Loop Behavior & Tuning
+## Open-Loop Speed Control
+
+[![Open Loop Speed Test](https://img.youtube.com/vi/ZVeU-i5agMQ/0.jpg)](https://youtu.be/ZVeU-i5agMQ)
+*Open-loop speed control demonstration showing motor acceleration and velocity control*
 
 Open-loop (no sensor) approximates rotation and may:
 - Cog or stall at very low speeds.
@@ -171,6 +174,9 @@ vel target(rad/s): 10.00  est mech rpm ~95.5
 ```
 
 ## Open-Loop Angle Control Mode
+
+[![Open Loop Angle Control](https://img.youtube.com/vi/ZWguelsuv0g/0.jpg)](https://youtube.com/shorts/ZWguelsuv0g)
+*Open-loop angle control demonstration showing precise electrical angle positioning*
 
 Precise electrical angle positioning without encoder feedback. Useful for testing motor response, verifying electrical angle mapping, and understanding pole pair configuration.
 
