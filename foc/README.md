@@ -31,7 +31,16 @@ Field-oriented control (FOC) firmware for BLDC motors using SimpleFOC library on
 
 ## Wiring Guide
 
-Essential connections (grounds common):
+### Power Connections
+All grounds must be common between components.
+
+| Connection | Notes |
+|------------|-------|
+| VM (driver) → 12V supply + | Motor power (separate from 3.3V logic) |
+| 3.3V (Blue Pill) → 3.3V/VCC (driver) | Logic power supply |
+| GND (Blue Pill) → GND (driver) | Common ground |
+
+### Motor Driver (SimpleFOC Mini) Connections
 
 | Blue Pill Pin | SimpleFOC Mini | Purpose |
 |---------------|----------------|---------|
@@ -39,17 +48,22 @@ Essential connections (grounds common):
 | PA9           | IN2 / PWM2     | Phase B PWM |
 | PA10          | IN3 / PWM3     | Phase C PWM |
 | PB12          | EN / nSLEEP    | Driver enable (active HIGH) |
-| 3.3V          | 3.3V / VCC     | Logic power (if board expects it) |
-| GND           | GND            | Common ground |
-| PA2 (TX2)     | USB‑TTL RX     | Debug serial out |
-| PA3 (RX2)     | USB‑TTL TX     | Debug serial in |
-| VM (driver)   | 12V supply +   | Motor power (separate from 3.3V) |
 
 Motor phases → OUT_A / OUT_B / OUT_C (order arbitrary; swap any two to invert direction if needed).
 
-Optional (not used yet):
-- nFAULT → free GPIO with pull‑up for diagnostics.
-- Add a sensor (magnetic / encoder) later to move from open-loop to full FOC.
+### Debug Serial (USB-TTL Adapter)
+
+| Blue Pill Pin | USB-TTL Adapter | Purpose |
+|---------------|-----------------|---------|
+| PA2 (TX2)     | RX              | Debug serial out |
+| PA3 (RX2)     | TX              | Debug serial in |
+| GND           | GND             | Common ground |
+
+> Use 3.3V logic level USB-TTL adapter. Connect at 115200 baud for CLI and telemetry.
+
+### Optional Connections (not used in current firmware)
+- **nFAULT** (SimpleFOC Mini) → free GPIO with pull-up for diagnostics
+- **Current sensing** pins for torque control (requires hardware modifications)
 
 ### MT6701 Encoder (ABZ Mode) Wiring
 
