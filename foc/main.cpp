@@ -5,8 +5,8 @@
 #define MODE_OPEN_LOOP_ANGLE 0      // open-loop angle control demo (no encoder)
 #define MODE_POLEPAIR_TEST 0        // automatic estimation of motor pole pairs using encoder
 #define MODE_ENCODER_TEST 0         // encoder wiring / basic angle+velocity view
-#define MODE_VELOCITY_CLOSED_LOOP 0 // closed-loop velocity control using encoder
-#define MODE_ANGLE_CLOSED_LOOP 1    // NEW: closed-loop angle control using encoder
+#define MODE_VELOCITY_CLOSED_LOOP 1 // closed-loop velocity control using encoder
+#define MODE_ANGLE_CLOSED_LOOP 0    // NEW: closed-loop angle control using encoder
 
 #if ( (MODE_POLEPAIR_TEST + MODE_ENCODER_TEST + MODE_OPEN_LOOP + MODE_OPEN_LOOP_ANGLE + MODE_VELOCITY_CLOSED_LOOP + MODE_ANGLE_CLOSED_LOOP) != 1 )
 #error "Exactly one MODE_XXX macro must be set to 1"
@@ -226,13 +226,13 @@ static const int   MAX_ELECTRICAL_REV = 14;    // sweep up to this many electric
 static const float STEP_E_ANGLE = 0.02f;       // electrical angle step (rad)
 static const uint32_t SETTLE_US = 2000;        // microseconds settle each step (2ms)
 
-// Encoder CPR (quadrature counts per mechanical revolution)
-static const uint32_t ENCODER_CPR = 1024; // set to your encoder configuration for informational prints
+// Encoder PPR (pulses per revolution) - SimpleFOC will calculate CPR = PPR * 4 internally
+static const uint32_t ENCODER_PPR = 1024; // set to your encoder configuration for informational prints
 
 // We construct a minimal BLDCMotor just to reuse setPhaseVoltage(). Pole pairs placeholder=1 (not used for manual angle).
 BLDCMotor motor_dummy(1);
 BLDCDriver3PWM driver(PIN_PWM_A, PIN_PWM_B, PIN_PWM_C, PIN_EN);
-Encoder encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_CPR);
+Encoder encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_PPR);
 void doA(){ encoder.handleA(); }
 void doB(){ encoder.handleB(); }
 
@@ -345,12 +345,11 @@ static const uint8_t PIN_ENC_A = PA0;
 static const uint8_t PIN_ENC_B = PA1;
 static const uint8_t PIN_ENC_Z = PB4;   // index pin (optional - not used directly in this test)
 
-// Set CPR (counts per revolution) expected by SimpleFOC: this is the quadrature edge count.
-// For a PPR (A channel pulses/rev) value of P, CPR = 4*P in quadrature mode.
-// Adjust to your MT6701 configuration (common: 2048 or 4096 CPR). Using 8192 as placeholder.
-static const uint32_t ENCODER_CPR = 8192; // CHANGE to your actual configured resolution.
+// Set PPR (pulses per revolution) expected by SimpleFOC Encoder constructor.
+// SimpleFOC will calculate CPR = PPR * 4 internally in quadrature mode.
+static const uint32_t ENCODER_PPR = 1024; // CHANGE to your actual configured resolution.
 
-Encoder encoder = Encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_CPR);
+Encoder encoder = Encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_PPR);
 
 void doA(){ encoder.handleA(); }
 void doB(){ encoder.handleB(); }
@@ -362,7 +361,7 @@ void setup(){
     delay(200);
     Serial2.println(F("MT6701 Encoder Test (ABZ)"));
     Serial2.println(F("Output columns: angle_rad\tvelocity_rad_s\traw_count"));
-    Serial2.print(F("Configured CPR: ")); Serial2.println(ENCODER_CPR);
+    Serial2.print(F("Configured PPR: ")); Serial2.println(ENCODER_PPR);
     Serial2.println(F("Send 'z' to zero angle / reset count. Send 'r' to toggle rate."));
 
     encoder.quadrature = Quadrature::ON;           // use full 4x decoding
@@ -405,11 +404,12 @@ void loop(){
     uint32_t interval = fastPrint ? intervalFast : intervalSlow;
     if((now - lastMicros) >= interval){
         lastMicros = now;
+        encoder.update();
         float angle = encoder.getAngle() - zeroAngle; // radians relative
         float vel   = encoder.getVelocity();    // rad/s
-        // raw tick count not exposed; approximate using angle * CPR /(2π)
-        long rawApprox = (long) ( (angle) * (float)ENCODER_CPR / (2.0f*PI) );
-        Serial2.print(angle, 6); Serial2.print('\t');
+        // raw pulse count not exposed; approximate using angle * PPR /(2π)
+        long rawApprox = (long) ( (angle) * (float)ENCODER_PPR / (2.0f*PI) );
+        Serial2.print(angle, 6); Serial2.print('	');
         Serial2.print(vel, 4);   Serial2.print('\t');
         Serial2.println(rawApprox);
     }
@@ -418,7 +418,7 @@ void loop(){
 
 #elif MODE_VELOCITY_CLOSED_LOOP
 // ============================= CLOSED-LOOP VELOCITY CONTROL (FOC) =============================
-// Requirements: Set correct MOTOR_POLE_PAIRS and ENCODER_CPR. Encoder wired (A=PA0,B=PA1).
+// Requirements: Set correct MOTOR_POLE_PAIRS and ENCODER_PPR. Encoder wired (A=PA0,B=PA1).
 // Commands over Serial2 (115200):
 //   v <rad_per_s>   set target velocity (example: v 20)
 //   s               stop (target=0)
@@ -432,7 +432,7 @@ void loop(){
 //   LPF_velocity.Tf = 0.02 .. 0.1 (increase for more smoothing, at expense of lag)
 
 static const uint8_t MOTOR_POLE_PAIRS = 11;      // <<< set to detected/known pole pairs
-static const uint32_t ENCODER_CPR = 1024;       // <<< set to your encoder CPR (quadrature counts)
+static const uint32_t ENCODER_PPR = 1024;       // <<< set to your encoder PPR (pulses per revolution)
 static const float SUPPLY_VOLTAGE = 12.0f;
 static const float VOLTAGE_LIMIT = 6.0f;        // limit phase voltage (adjust for current / heating)
 static const float CURRENT_VELOCITY_TARGET_DEFAULT = 10.0f; // rad/s
@@ -447,7 +447,7 @@ static const uint8_t PIN_ENC_B = PA1;
 
 BLDCMotor motor(MOTOR_POLE_PAIRS);
 BLDCDriver3PWM driver(PIN_PWM_A, PIN_PWM_B, PIN_PWM_C, PIN_EN);
-Encoder encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_CPR);
+Encoder encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_PPR);
 void encA(){ encoder.handleA(); }
 void encB(){ encoder.handleB(); }
 
@@ -569,7 +569,7 @@ void loop(){
 
 #elif MODE_ANGLE_CLOSED_LOOP
 // ============================= CLOSED-LOOP ANGLE CONTROL (FOC) =============================
-// Requirements: Set correct MOTOR_POLE_PAIRS and ENCODER_CPR. Encoder wired (A=PA0,B=PA1).
+// Requirements: Set correct MOTOR_POLE_PAIRS and ENCODER_PPR. Encoder wired (A=PA0,B=PA1).
 // Commands over Serial2 (115200):
 //   a <rad>         set target angle in radians (example: a 1.57)
 //   d <deg>         set target angle in degrees (example: d 90)
@@ -580,7 +580,7 @@ void loop(){
 // PID tuning for angle control (outer loop) and velocity (inner loop)
 
 static const uint8_t MOTOR_POLE_PAIRS = 11;      // <<< set to detected/known pole pairs
-static const uint32_t ENCODER_CPR = 1024;       // <<< set to your encoder CPR (quadrature counts)
+static const uint32_t ENCODER_PPR = 1024;       // <<< set to your encoder PPR (pulses per revolution)
 static const float SUPPLY_VOLTAGE = 12.0f;
 static const float VOLTAGE_LIMIT = 6.0f;        // limit phase voltage (adjust for current / heating)
 static const float VELOCITY_LIMIT = 8.0f;      // max velocity during angle moves (rad/s)
@@ -596,7 +596,7 @@ static const uint8_t PIN_ENC_B = PA1;
 
 BLDCMotor motor(MOTOR_POLE_PAIRS);
 BLDCDriver3PWM driver(PIN_PWM_A, PIN_PWM_B, PIN_PWM_C, PIN_EN);
-Encoder encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_CPR);
+Encoder encoder(PIN_ENC_A, PIN_ENC_B, ENCODER_PPR);
 void encA(){ encoder.handleA(); }
 void encB(){ encoder.handleB(); }
 

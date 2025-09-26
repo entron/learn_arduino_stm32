@@ -401,9 +401,8 @@ Before enabling closed-loop FOC, you can verify encoder wiring with a dedicated 
 
 2. Adjust the placeholder:
 	```c++
-	static const uint32_t ENCODER_CPR = 8192; // set to your configured resolution
+	static const uint32_t ENCODER_PPR = 1024; // set to your configured resolution
 	```
-	MT6701 common incremental resolutions: 1024, 2048, 4096, 8192 CPR (after quadrature). Use the actual quadrature edge count (i.e. 4 * PPR).
 
 3. Flash the firmware and open the Serial2 monitor (PA2/PA3) at 115200 baud.
 
@@ -419,7 +418,7 @@ Before enabling closed-loop FOC, you can verify encoder wiring with a dedicated 
 6. Validation steps:
 	- Rotate shaft slowly forward → angle increases smoothly.
 	- Reverse direction → angle decreases (or invert later using `encoder.direction = Direction::CCW;`).
-	- One full revolution ≈ `ENCODER_CPR` change in `rawApproxCounts` (after zeroing).
+	- One full revolution ≈ `ENCODER_PPR` change in `rawApproxCounts` (after zeroing).
 	- Velocity near zero while stationary; proportional to speed when moving.
 
 If angle direction is inverted you can either swap A/B lines or (preferred) set direction in code when moving to closed-loop.
@@ -433,7 +432,7 @@ Enabled when `MODE_VELOCITY_CLOSED_LOOP` = 1. Provides field‑oriented control 
 | Constant | Meaning | Example |
 |----------|---------|---------|
 | `MOTOR_POLE_PAIRS` | Mechanical pole pairs (magnets/2) | 11 |
-| `ENCODER_CPR` | Quadrature counts per mechanical revolution | 8192 |
+| `ENCODER_PPR` | Pulses per revolution (SimpleFOC calculates CPR internally) | 1024 |
 | `SUPPLY_VOLTAGE` | Driver supply (for voltage mapping) | 12.0 V |
 | `VOLTAGE_LIMIT` | Max q‑axis voltage demand (limits current/heat) | 6.0 V |
 | `target_velocity` | Initial commanded velocity (rad/s) | 10.0 |
@@ -542,7 +541,7 @@ Set only this macro to 1 in `src/main.cpp`:
 | Constant | Meaning | Default | Notes |
 |----------|---------|---------|-------|
 | `MOTOR_POLE_PAIRS` | Mechanical pole pairs (magnets/2) | 11 | Must match your motor |
-| `ENCODER_CPR` | Quadrature counts per mechanical revolution | 1024 | Set to your encoder configuration |
+| `ENCODER_PPR` | Pulses per revolution (SimpleFOC calculates CPR internally) | 1024 | Set to your encoder configuration |
 | `SUPPLY_VOLTAGE` | Driver supply voltage | 12.0V | For voltage mapping |
 | `VOLTAGE_LIMIT` | Max phase voltage | 6.0V | Limits current/heating |
 | `VELOCITY_LIMIT` | Max velocity during angle moves | 8.0 rad/s | Controls transition speed |
