@@ -72,7 +72,3 @@ Each project folder contains setup and test results:
 - `foc/README.md` - FOC motor control setup, wiring, and test results
 - `hcsr04/README.md` - Ultrasonic sensor wiring, configuration, and performance results
 
-
-## License
-
-Quick prototyping and testing purposes. Feel free to experiment, modify, and share your test results!
