@@ -43,10 +43,101 @@ This repo contains quick test implementations for various modules using existing
 ## Getting Started
 
 ### Prerequisites
-- **PlatformIO** (CLI and VS Code extension)
+- **PlatformIO** (CLI and VS Code extension) - see Linux setup below
 - **STM32 Blue Pill** (STM32F103C8T6)
 - **ST-Link V2** programmer (or compatible)
 - Basic understanding of Arduino framework
+
+### Linux Development Environment Setup
+
+Complete setup guide for PlatformIO development on Linux:
+
+#### 1. Install PlatformIO Core
+
+Download and install PlatformIO Core using the official installer:
+
+```bash
+# Download the PlatformIO installer
+wget -O get-platformio.py https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py
+
+# Install PlatformIO Core
+python3 get-platformio.py
+```
+
+#### 2. Add PlatformIO to PATH
+
+Create local bin directory and symlink PlatformIO executables:
+
+```bash
+# Create local bin directory
+mkdir -p ~/.local/bin/
+
+# Create symlinks for PlatformIO commands
+ln -s ~/.platformio/penv/bin/platformio ~/.local/bin/platformio
+ln -s ~/.platformio/penv/bin/pio ~/.local/bin/pio
+ln -s ~/.platformio/penv/bin/piodebuggdb ~/.local/bin/piodebuggdb
+```
+
+Ensure `~/.local/bin` is in your PATH by adding this to your `~/.bashrc` or `~/.zshrc`:
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+#### 3. Configure USB Device Permissions
+
+Install udev rules for STM32 programmers and add user to dialout group:
+
+```bash
+# Install PlatformIO udev rules
+curl -fsSL https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/system/99-platformio-udev.rules | sudo tee /etc/udev/rules.d/99-platformio-udev.rules
+
+# Add current user to dialout group for USB device access
+sudo usermod -a -G dialout $USER
+
+# Reload udev rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+**Note:** Log out and log back in for group membership changes to take effect.
+
+#### 4. Install VS Code Extension
+
+Install the PlatformIO IDE extension in VS Code:
+- Open VS Code
+- Go to Extensions (Ctrl+Shift+X)
+- Search for "PlatformIO IDE"
+- Install the official PlatformIO extension
+
+#### 5. Install Serial Communication Tools
+
+For debugging and monitoring serial output:
+
+```bash
+# Install CuteCom - GUI serial terminal
+sudo apt install cutecom
+
+# Install SerialPlot - real-time data plotting
+# Download the latest .deb from: https://github.com/hyOzd/serialplot/releases
+# Then install with:
+sudo dpkg -i serialplot_*.deb
+sudo apt install -f  # Fix any dependency issues
+```
+
+#### 6. Verify Installation
+
+Test your setup:
+
+```bash
+# Check PlatformIO version
+pio --version
+
+# List connected devices
+pio device list
+
+# Test project compilation (from this repository)
+pio run -e bluepill_foc
+```
 
 ### Quick Test FOC Motor Control
 ```bash
